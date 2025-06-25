@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+bak/
+*.7z
+*.zip
+*.rar
+*.tar.gz
+.idea/
+.vscode/
+.DS_Store
+.env
