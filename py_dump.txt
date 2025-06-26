@@ -1,0 +1,1309 @@
+﻿==== C:\dev\projects\bloodline_extractor\config.py ====
+import os
+import socket
+
+# === HOSTNAMES REGISTRADOS ===
+HOST_R7 = "R7-BLOODLINE"
+HOST_R5 = "R5-BLOODLINE"
+
+# === DETECCIÃ“N DEL EQUIPO ACTUAL ===
+HOSTNAME = socket.gethostname().upper()
+
+if HOSTNAME == HOST_R7:
+    LIBRARY_PATH = "D:/catalog/BloodlineLibrary/anime"
+elif HOSTNAME == HOST_R5:
+    LIBRARY_PATH = "C:/catalog/BloodlineLibrary/anime"
+else:
+    LIBRARY_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "anime"))  # fallback
+
+# === RUTAS DERIVADAS ===
+BASE_PATH = os.path.abspath(os.path.join(LIBRARY_PATH, ".."))
+LOG_DIR = os.path.join(BASE_PATH, "logs")
+LOG_MAESTRO_PATH = os.path.join(BASE_PATH, "progress_master.json")
+GLOBAL_FALTANTES_CSV = os.path.join(BASE_PATH, "faltantes_globales.csv")
+
+# === CONFIGURACIÃ“N DE RED ===
+BASE_URL = "https://jkanime.net"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+}
+
+# === PAUSAS ENTRE ACCIONES ===
+FAST_SLEEP = 1.0
+
+def SAFE_SLEEP():
+    import random
+    return random.uniform(2.5, 3.5)
+
+
+
+==== C:\dev\projects\bloodline_extractor\directorio.py ====
+import re
+import json
+from bs4 import BeautifulSoup
+from config import HEADERS
+from driver import obtener_html_renderizado, crear_driver_configurado
+
+BASE_URL = "https://jkanime.net"
+
+def construir_url_directorio(estado="finalizados", pagina=1, orden="desc"):
+    url = f"{BASE_URL}/directorio?estado={estado}"
+    if orden == "asc":
+        url += "&orden=asc"
+    url += f"&p={pagina}"
+    return url
+
+def obtener_slugs_directorio(estado, pagina, orden="desc", driver=None):  # â† Nuevo parÃ¡metro
+    url = construir_url_directorio(estado, pagina, orden)
+    html = obtener_html_renderizado(url, visible=False, driver=driver)  # â† Se pasa driver
+
+    soup = BeautifulSoup(html, "html.parser")
+    script_tags = soup.find_all("script", string=re.compile(r"var animes\s*=\s*\{"))
+
+    for script in script_tags:
+        match = re.search(r"var animes\s*=\s*(\{.*?\});", script.string, re.DOTALL)
+        if match:
+            try:
+                animes_json = json.loads(match.group(1))
+                slugs = [entry["slug"] for entry in animes_json["data"]]
+                last_page = animes_json.get("last_page", pagina)
+                print(f"[DEBUG] {len(slugs)} slugs encontrados en pÃ¡gina {pagina}")
+                return slugs, last_page
+            except Exception as e:
+                print(f"[!] Error al parsear JSON en pÃ¡gina {pagina}: {e}")
+                return [], pagina
+
+    print(f"[!] No se encontrÃ³ bloque 'var animes' en la pÃ¡gina {pagina}")
+    return [], pagina
+
+==== C:\dev\projects\bloodline_extractor\driver.py ====
+import undetected_chromedriver as uc
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+import time
+
+def crear_driver_configurado(visible=True):
+    options = uc.ChromeOptions()
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-popup-blocking')
+    options.add_argument('--disable-notifications')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('--mute-audio')
+    options.add_argument('--disable-logging')
+    options.add_argument('--log-level=3')
+    options.page_load_strategy = "normal"
+
+    # Mueve fuera del monitor ANTES de instanciar el driver
+    if not visible:
+        options.add_argument("--window-position=4000,0")
+
+    prefs = {
+        "profile.managed_default_content_settings.images": 2,
+        "profile.default_content_setting_values.notifications": 2,
+        "profile.default_content_setting_values.popups": 2,
+        "profile.default_content_setting_values.javascript": 1
+    }
+    options.add_experimental_option("prefs", prefs)
+
+    driver = uc.Chrome(
+        driver_executable_path="C:\\WebDrivers\\chrome\\136\\chromedriver.exe",
+        browser_executable_path="C:\\PortableApps\\Chrome136\\chrome.exe",
+        options=options
+    )
+    driver.set_page_load_timeout(45)
+    return driver
+
+def obtener_html_renderizado(url, visible=False, driver=None):  # â† NUEVO PARÃMETRO
+    propio = False
+    if driver is None:
+        driver = crear_driver_configurado(visible)
+        propio = True
+
+    try:
+        driver.get("https://www.google.com")
+        time.sleep(2.5)  # evitar crash inicial sin sesiÃ³n
+        driver.get(url)
+        time.sleep(3.5)
+        html = driver.page_source
+        return html
+    finally:
+        if propio:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+def cerrar_tabs_adicionales(driver):
+    while len(driver.window_handles) > 1:
+        try:
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.close()
+        except:
+            pass
+        driver.switch_to.window(driver.window_handles[0])
+
+==== C:\dev\projects\bloodline_extractor\main.py ====
+import socket
+from directorio import obtener_slugs_directorio
+from metadata_extractor import extraer_metadata
+from config import LIBRARY_PATH, SAFE_SLEEP
+from utils import generar_alias
+from procesar_anime import procesar_anime
+from driver import crear_driver_configurado as crear_driver  # â† NUEVO
+import time
+
+print("=== BLOODLINE EXTRACTOR ===")
+
+# --- DETECCIÃ“N DE HOSTNAME ---
+nombre_pc = socket.gethostname().upper()
+print(f"[ðŸ–¥ï¸] Ejecutando en mÃ¡quina: {nombre_pc}")
+print(f"[ðŸ“‚] Biblioteca localizada en: {LIBRARY_PATH}\n")
+
+# --- SELECCIÃ“N DE ESTADO ---
+print("1. Selecciona el tipo de animes a scrapear:")
+print("   [1] Finalizados")
+print("   [2] En emisiÃ³n")
+print("   [3] Estrenos (solo metadata)")
+op_estado = input("   OpciÃ³n (1/2/3): ").strip()
+
+estado_map = {
+    "1": "finalizados",
+    "2": "emision",
+    "3": "estrenos"
+}
+estado = estado_map.get(op_estado, "finalizados")
+
+# --- SELECCIÃ“N DE ORDEN ---
+print("\n2. Â¿En quÃ© orden deseas procesar?")
+print("   [1] Descendente (por defecto)")
+print("   [2] Ascendente (de los mÃ¡s viejos a los nuevos)")
+op_orden = input("   OpciÃ³n (1/2): ").strip()
+
+orden = "asc" if op_orden == "2" else "desc"
+
+# --- VISIBILIDAD DEL NAVEGADOR ---
+print("\n3. Â¿Deseas que el navegador sea visible?")
+print("   [1] SÃ­ (Ãºtil para debug)")
+print("   [2] No (modo oculto fuera del monitor)")
+op_visible = input("   Visibilidad (1/2): ").strip()
+
+modo_oculto = (op_visible == "2")
+
+print(f"\n[âš™ï¸] Estado: {estado} â€” Orden: {orden.upper()} â€” Navegador {'oculto' if modo_oculto else 'visible'}\n")
+
+# === CREAR DRIVER UNA VEZ ===
+driver = crear_driver(visible=not modo_oculto) # â† NUEVO
+
+# --- INICIO DE SCRAPING ---
+pagina = 1
+ultima_pagina = None
+aliases_generados = set()
+
+try:
+    while True:
+        print(f"[â†’] PÃ¡gina {pagina}")
+        slugs, ultima_pagina = obtener_slugs_directorio(estado, pagina, orden, driver=driver)  # â† CAMBIO
+        if not slugs:
+            print(f"[âœ“] No se encontraron mÃ¡s animes en la pÃ¡gina {pagina}. Fin del scraping.")
+            break
+
+        for slug in slugs:
+            try:
+                alias = generar_alias(slug, existentes=aliases_generados)
+                aliases_generados.add(alias)
+                procesar_anime(slug, alias, driver=driver, modo_oculto=modo_oculto)  # â† CAMBIO
+
+            except Exception as e:
+                print(f"[!] Error en {slug}: {e}")
+
+        if pagina >= ultima_pagina:
+            print(f"[ðŸ] Reached last page: {ultima_pagina}")
+            break
+
+        pagina += 1
+        print("[ðŸ’¤] Descansando un poco antes de pasar a la siguiente pÃ¡gina...\n")
+        time.sleep(SAFE_SLEEP())
+
+finally:
+    driver.quit()  # â† CIERRE ÃšNICO Y SEGURO
+
+print("\n[ðŸ§¹] Proceso finalizado.")
+
+==== C:\dev\projects\bloodline_extractor\mega_extractor_embed.py ====
+import os
+import time
+import csv
+import re
+import requests
+import cloudscraper
+from bs4 import BeautifulSoup
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import undetected_chromedriver as uc
+from driver import cerrar_tabs_adicionales
+
+BASE_URL = "https://jkanime.net"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+}
+
+scraper = cloudscraper.create_scraper()
+
+# Espera aleatoria entre 2.5 y 3.5 segundos
+def SAFE_SLEEP():
+    import random
+    time.sleep(random.uniform(2.5, 3.5))
+
+def formatear_episodio(n):
+    return f"ep{int(n)}"
+
+def resolver_link_proxy(proxy_url, driver):
+    try:
+        resp = requests.get(proxy_url, headers=HEADERS, allow_redirects=True, timeout=(5, 15))
+        if "mega.nz" in resp.url:
+            return resp.url
+    except:
+        pass
+
+    try:
+        driver.get(proxy_url)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+        iframe = driver.find_element(By.TAG_NAME, "iframe")
+        return iframe.get_attribute("src") if iframe and "mega.nz" in iframe.get_attribute("src") else None
+    except:
+        return None
+
+def verificar_link_mega(link, driver):
+    try:
+        driver.get(link)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        try:
+            WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label='Aceptar todo']"))
+            ).click()
+            time.sleep(1)
+        except:
+            pass
+        return esperar_botones_descarga(driver)
+    except:
+        return False
+
+def esperar_botones_descarga(driver, timeout=3):
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "button.js-standard-download, a.js-standard-download"))
+        )
+        return True
+    except:
+        return False
+
+def extraer_link_mega(slug, alias, episodio, driver, library_path):
+    episodio_tag = formatear_episodio(episodio)
+    episodio_url = f"{BASE_URL}/{slug}/{episodio}/"
+    print(f"[â–¶] Revisando episodio: {episodio_url}")
+
+    try:
+        driver.get(episodio_url)
+        SAFE_SLEEP()
+
+        if "404" in driver.title or "PÃ¡gina no encontrada" in driver.page_source:
+            print(f"  [âŒ] PÃ¡gina inexistente para {episodio_tag}")
+            return None
+
+        WebDriverWait(driver, 12).until(EC.element_to_be_clickable((By.ID, "dwld"))).click()
+        cerrar_tabs_adicionales(driver)
+        SAFE_SLEEP()
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        tabla = soup.find("div", class_="download")
+        cerrar_tabs_adicionales(driver)
+        if tabla:
+            for fila in tabla.find_all("tr"):
+                celdas = fila.find_all("td")
+                if len(celdas) >= 4 and "mega" in celdas[0].text.lower():
+                    a = celdas[3].find("a")
+                    if a and a.has_attr("href"):
+                        proxy_url = a["href"]
+                        final_url = resolver_link_proxy(proxy_url, driver)
+                        if final_url and "mega.nz" in final_url and verificar_link_mega(final_url, driver):
+                            print(f"  [+] {episodio_tag}: {final_url}")
+                            guardar_links_csv(os.path.join(library_path, alias, f"{alias}_mega_links.csv"), [(episodio_tag, final_url)], slug, library_path)
+                            return final_url
+
+        print(f"  [âš ï¸] No se encontrÃ³ link MEGA para {episodio_tag}")
+        return None
+
+    except Exception as e:
+        print(f"  [!] Error al procesar {episodio_tag}: {e}")
+        return None
+
+def guardar_links_csv(path, links, slug, library_path):
+    existentes = set()
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and row[0]:
+                    existentes.add(row[0])
+
+    with open(path, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        if os.stat(path).st_size == 0 or not existentes:
+            writer.writerow(["episodio", "link_mega", "ruta_destino"])
+
+        ruta_destino = os.path.join(library_path, slug)
+        for episodio, link in links:
+            if episodio not in existentes:
+                writer.writerow([episodio, link, ruta_destino])
+
+==== C:\dev\projects\bloodline_extractor\metadata_extractor.py ====
+import os
+import re
+import csv
+import time
+import cloudscraper
+import requests
+from bs4 import BeautifulSoup
+from config import LIBRARY_PATH
+from utils import generar_alias
+from mega_extractor_embed import extraer_link_mega
+from driver import crear_driver_configurado, cerrar_tabs_adicionales
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+}
+
+BASE_URL = "https://jkanime.net"
+
+def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True, driver=None):
+    if alias is None:
+        alias = generar_alias(slug, existentes_aliases)
+
+    carpeta_destino = os.path.join(LIBRARY_PATH, alias)
+    os.makedirs(carpeta_destino, exist_ok=True)
+
+    metadata_csv_path = os.path.join(carpeta_destino, f"{alias}_metadata.csv")
+    imagen_path = os.path.join(carpeta_destino, f"{alias}.jpg")
+
+    if os.path.exists(metadata_csv_path):
+        try:
+            with open(metadata_csv_path, encoding="utf-8") as f:
+                if f.read().strip():
+                    print(f"  [â©] Metadata ya guardada: {alias}_metadata.csv")
+                    return True
+        except:
+            pass
+
+    try:
+        scraper = cloudscraper.create_scraper()
+        url = f"{BASE_URL}/{slug}/"
+        res = scraper.get(url, headers=HEADERS)
+        if res.status_code != 200:
+            print(f"[!] Error al acceder a {url} (status {res.status_code})")
+            return False
+
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        info_box = soup.select_one(".anime_info")
+        datos_box = soup.select_one(".anime_data")
+
+        # --- Titulo y sinopsis ---
+        titulo = info_box.find("h3").text.strip() if info_box and info_box.find("h3") else slug
+        sinopsis_tag = info_box.find("p", class_="scroll") if info_box else None
+        sinopsis = sinopsis_tag.text.strip() if sinopsis_tag else ""
+        sinopsis = sinopsis.replace("\n", " ").replace("\r", " ").strip()
+
+        # --- Imagen ---
+        img_tag = info_box.find("img") if info_box else None
+        imagen_url = img_tag["src"] if img_tag and img_tag.has_attr("src") else ""
+        if imagen_url.startswith("//"):
+            imagen_url = "https:" + imagen_url
+        elif imagen_url.startswith("/"):
+            imagen_url = BASE_URL + imagen_url
+
+        # --- Generos ---
+        generos = ""
+        if datos_box:
+            genero_tags = datos_box.select("li span:-soup-contains('Generos') ~ a")
+            generos = ", ".join([a.text.strip() for a in genero_tags])
+
+        # --- Estado ---
+        estado_div = info_box.select_one(".dropmenu") if info_box else None
+        estado = estado_div["data-status"].capitalize() if estado_div and estado_div.has_attr("data-status") else "Desconocido"
+
+        # --- Extras ---
+        def extraer_valor(label):
+            if not datos_box:
+                return ""
+            for li in datos_box.find_all("li"):
+                span = li.find("span")
+                if span and label.lower() in span.text.lower():
+                    return li.text.replace(span.text, "").strip()
+            return ""
+
+        tipo = extraer_valor("Tipo") or "Serie"
+        idioma = "JaponÃ©s"
+        episodios = extraer_valor("Episodios")
+        emitido = extraer_valor("Emitido")
+        anio = ""
+        if emitido:
+            match = re.search(r"(\d{4})", emitido)
+            if match:
+                anio = match.group(1)
+
+        # --- Guardar imagen local ---
+        if imagen_url:
+            try:
+                img_response = requests.get(imagen_url, headers=HEADERS, timeout=10)
+                img_response.raise_for_status()
+                with open(imagen_path, "wb") as f:
+                    f.write(img_response.content)
+                print(f"  [ðŸ–¼ï¸] Imagen guardada como {alias}.jpg")
+            except Exception as e:
+                print(f"  [!] Error al guardar imagen de {slug}: {e}")
+        else:
+            print(f"  [âš ï¸] No se encontrÃ³ imagen para {slug}")
+
+        # --- Guardar CSV ---
+        with open(metadata_csv_path, mode="w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["titulo", "sinopsis", "generos", "estado", "episodios", "tipo", "idioma", "anio"])
+            writer.writerow([titulo, sinopsis, generos, estado, episodios, tipo, idioma, anio])
+
+        print(f"  [ðŸ“] Metadata guardada: {metadata_csv_path}")
+
+        # === INICIO EXTRACCIÃ“N MEGA ===
+        try:
+            encontrados = re.findall(r"\d+", episodios)
+            if encontrados:
+                total_eps = int(encontrados[-1])
+            else:
+                total_eps = 20
+        except:
+            total_eps = 20
+
+        if total_eps > 0:
+            print(f"  [ðŸ”—] Iniciando extracciÃ³n de enlaces MEGA para {total_eps} episodios...")
+            propio = False
+            if driver is None:
+                driver = crear_driver_configurado(visible=not modo_oculto)
+                propio = True
+
+            links_validos = 0
+            for ep in range(1, total_eps + 1):
+                resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+                cerrar_tabs_adicionales(driver)
+                if resultado:
+                    links_validos += 1
+
+            if links_validos == 0:
+                print(f"  [âš ï¸] No se encontrÃ³ ningÃºn link MEGA vÃ¡lido para {slug}")
+
+            if propio:
+                driver.quit()
+        else:
+            print(f"  [âš ï¸] Episodios desconocidos o sin formato vÃ¡lido. No se extraerÃ¡n enlaces MEGA.")
+
+        return True
+
+    except Exception as e:
+        print(f"[!] Error extrayendo metadata de {slug}: {e}")
+        return False
+
+==== C:\dev\projects\bloodline_extractor\procesar_anime.py ====
+import os
+import re
+import time
+from mega_extractor_embed import extraer_link_mega
+from metadata_extractor import extraer_metadata
+from utils import generar_alias
+from config import LIBRARY_PATH, SAFE_SLEEP
+from driver import cerrar_tabs_adicionales
+
+
+def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
+    """
+    Procesa un anime: extrae metadata, busca episodios, guarda links MEGA.
+    Usa modo exploratorio con errores consecutivos para terminar.
+    """
+    if alias is None:
+        alias = generar_alias(slug)
+
+    folder_path = os.path.join(LIBRARY_PATH, alias)
+    os.makedirs(folder_path, exist_ok=True)
+
+    # --- METADATA ---
+    success = extraer_metadata(slug, alias, modo_oculto=modo_oculto, driver=driver)
+    if not success:
+        print(f"[!] No se pudo extraer metadata de {slug}. Abortando procesamiento.")
+        return False
+
+    # --- MODO EXPLORATORIO DE EPISODIOS ---
+    print(f"  [ðŸ”] Explorando episodios para {slug}...")
+    errores_consecutivos = 0
+    MAX_ERRORES = 2
+    ep = 1
+    links_validos = 0
+
+    while errores_consecutivos < MAX_ERRORES:
+        resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+        cerrar_tabs_adicionales(driver)
+
+        if resultado:
+            print(f"  [+] Episodio {ep:02} OK")
+            links_validos += 1
+            errores_consecutivos = 0
+        else:
+            print(f"  [âœ–] Episodio {ep:02} no disponible")
+            errores_consecutivos += 1
+
+        ep += 1
+        time.sleep(SAFE_SLEEP())
+
+    print(f"  [âœ“] Finalizado {slug}: {links_validos} enlaces MEGA vÃ¡lidos.")
+    return True
+
+==== C:\dev\projects\bloodline_extractor\progreso.py ====
+import os
+import json
+import datetime
+from config import LOG_MAESTRO_PATH
+
+def cargar_progress():
+    if os.path.exists(LOG_MAESTRO_PATH):
+        try:
+            with open(LOG_MAESTRO_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+def guardar_progress(data):
+    with open(LOG_MAESTRO_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+def timestamp():
+    return datetime.datetime.now().isoformat(timespec='seconds')
+
+def registrar_faltante(slug, alias, ep_tag):
+    data = cargar_progress()
+    if slug not in data:
+        data[slug] = {"alias": alias, "links_validos": 0, "faltantes": [], "intentos": {}, "completado": False}
+
+    anime = data[slug]
+    anime.setdefault("faltantes", [])
+    anime.setdefault("intentos", {})
+
+    if ep_tag not in anime["faltantes"]:
+        anime["faltantes"].append(ep_tag)
+    anime["intentos"][ep_tag] = anime["intentos"].get(ep_tag, 0) + 1
+    anime["timestamp"] = timestamp()
+
+    guardar_progress(data)
+
+def registrar_exito(slug, alias, ep_tag):
+    data = cargar_progress()
+    if slug not in data:
+        data[slug] = {"alias": alias, "links_validos": 0, "faltantes": [], "intentos": {}, "completado": False}
+
+    anime = data[slug]
+    anime["links_validos"] += 1
+    if ep_tag in anime.get("faltantes", []):
+        anime["faltantes"].remove(ep_tag)
+    anime["timestamp"] = timestamp()
+
+    guardar_progress(data)
+
+def marcar_completado(slug):
+    data = cargar_progress()
+    if slug in data:
+        data[slug]["completado"] = True
+        data[slug]["timestamp"] = timestamp()
+        guardar_progress(data)
+
+def obtener_faltantes(slug):
+    data = cargar_progress()
+    anime = data.get(slug, {})
+    return anime.get("faltantes", [])
+
+==== C:\dev\projects\bloodline_extractor\utils.py ====
+def generar_alias(slug, existentes=None, max_len=15):
+    """
+    Genera un alias legible a partir de un slug.
+
+    :param slug: Texto tipo slug separado por guiones.
+    :param existentes: Conjunto opcional de alias ya usados para evitar duplicados.
+    :param max_len: Longitud mÃ¡xima del alias.
+    :return: Alias generado.
+    """
+    partes = [p for p in slug.split("-") if len(p) > 2]  # evita preposiciones y basura
+    alias = ""
+
+    for p in partes:
+        if len(alias + p.capitalize()) <= max_len:
+            alias += p.capitalize()
+        else:
+            break
+
+    if not alias:
+        alias = slug[:max_len].replace("-", "").capitalize()
+
+    original_alias = alias
+    contador = 1
+    while existentes and alias in existentes:
+        alias = f"{original_alias[:max_len - len(str(contador))]}{contador}"
+        contador += 1
+
+    return alias
+
+    import csv
+import os
+import re
+from config import LIBRARY_PATH
+
+def episodios_mega_guardados(alias, total_esperado):
+    """Verifica cuÃ¡ntos episodios con link MEGA han sido extraÃ­dos y guardados en el CSV correspondiente."""
+    path = os.path.join(LIBRARY_PATH, alias, f"{alias}_mega_links.csv")
+    episodios = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # Saltar cabecera
+            for row in reader:
+                if row and row[0].startswith("ep"):
+                    try:
+                        num = int(re.sub(r"\D", "", row[0]))
+                        episodios.add(num)
+                    except:
+                        continue
+    return len(episodios), episodios
+
+==== C:\dev\projects\bloodline_extractor\bak\config.py ====
+import os
+import socket
+
+# === HOSTNAMES REGISTRADOS ===
+HOST_R7 = "R7-BLOODLINE"
+HOST_R5 = "R5-BLOODLINE"
+
+# === DETECCIÃ“N DEL EQUIPO ACTUAL ===
+HOSTNAME = socket.gethostname().upper()
+
+if HOSTNAME == HOST_R7:
+    LIBRARY_PATH = "D:/catalog/BloodlineLibrary/anime"
+elif HOSTNAME == HOST_R5:
+    LIBRARY_PATH = "C:/catalog/BloodlineLibrary/anime"
+else:
+    LIBRARY_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "anime"))  # fallback
+
+# === RUTAS DERIVADAS ===
+BASE_PATH = os.path.abspath(os.path.join(LIBRARY_PATH, ".."))
+LOG_DIR = os.path.join(BASE_PATH, "logs")
+LOG_MAESTRO_PATH = os.path.join(BASE_PATH, "progress_master.json")
+GLOBAL_FALTANTES_CSV = os.path.join(BASE_PATH, "faltantes_globales.csv")
+
+# === CONFIGURACIÃ“N DE RED ===
+BASE_URL = "https://jkanime.net"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+}
+
+# === PAUSAS ENTRE ACCIONES ===
+FAST_SLEEP = 1.0
+
+def SAFE_SLEEP():
+    import random
+    return random.uniform(2.5, 3.5)
+
+
+
+==== C:\dev\projects\bloodline_extractor\bak\constants.py ====
+# === [ HOSTNAMES REGISTRADOS DEL SISTEMA BLOODLINE ] ===
+HOST_R7 = "R7-BLOODLINE"
+HOST_R5 = "R5-BLOODLINE"
+
+# === [ ESTADOS DE JKANIME ] ===
+ESTADOS_VALIDOS = ["emision", "finalizados", "estrenos"]
+ORDEN_ASC = "asc"
+ORDEN_DESC = "desc"
+
+# === [ PROVEEDORES DE LINKS (ORDEN DE PRIORIDAD) ] ===
+ORIGEN_MEGA = "mega"
+ORIGEN_MEDIAFIRE = "mediafire"
+ORIGEN_MIRROR = "mirror"
+PRIORIDAD_PROVEEDORES = [ORIGEN_MEGA, ORIGEN_MEDIAFIRE, ORIGEN_MIRROR]
+
+# === [ CAMPOS ESTÃNDAR DEL LOG MAESTRO ] ===
+CAMPO_TIMESTAMP = "timestamp"
+CAMPO_LINK = "link"
+CAMPO_ORIGEN = "origen"
+CAMPO_COMPLETADO = "completado"
+CAMPO_METADATA = "metadata"
+CAMPO_EPISODIOS_VISTOS = "episodios_vistos"
+CAMPO_TOTAL_ESPERADO = "total_esperado"
+CAMPO_FALTANTES = "faltantes"
+CAMPO_PROXY_VALIDADO = "proxy_validado"
+CAMPO_CSV_GENERADO = "csv_generado"
+CAMPO_FUENTE = "fuente"
+CAMPO_SLUG = "slug"
+
+# === [ NOMBRES DE ARCHIVOS GENERADOS ] ===
+NOMBRE_LOG_MAESTRO = "log_maestro.json"
+NOMBRE_CSV_MEGA = "mega_links_{slug}.csv"
+NOMBRE_CSV_MEDIAFIRE = "mediafire_links_{slug}.csv"
+NOMBRE_CSV_MIRRORS = "mirrors_links_{slug}.csv"
+NOMBRE_CSV_METADATA = "metadata_{slug}.csv"
+NOMBRE_IMAGEN = "{slug}.jpg"
+
+# === [ CARPETAS INTERNAS DEL EXTRACTOR ] ===
+FOLDER_COMPLETOS = "completos"
+FOLDER_FALTANTES = "faltantes"
+FOLDER_TEMP = "temp"
+FOLDER_LOGS = "logs"
+
+# === [ TIPOS DE CONTENIDO VÃLIDOS ] ===
+TIPO_ANIME = "anime"
+TIPO_MANGA = "manga"
+TIPO_HENTAI = "hentai"
+TIPOS_VALIDOS = [TIPO_ANIME, TIPO_MANGA, TIPO_HENTAI]
+
+# === [ DELAYS Y TIMINGS ] ===
+DELAY_CORTO = 1.5
+DELAY_LARGO = 3.0
+DELAY_VARIABILIDAD = 0.75
+SELENIUM_TIMEOUT = 12
+
+# === [ VALIDADORES Y FORMATOS ] ===
+SLUG_VALIDO_REGEX = r"^[a-z0-9\-]+$"
+EXTENSIONES_VALIDAS_VIDEO = [".mp4", ".mkv", ".webm"]
+
+# === [ COLORES ANSI PARA CONSOLA ] ===
+COLOR_RESET = "\033[0m"
+COLOR_VERDE = "\033[92m"
+COLOR_ROJO = "\033[91m"
+COLOR_AMARILLO = "\033[93m"
+COLOR_AZUL = "\033[94m"
+COLOR_CIAN = "\033[96m"
+COLOR_MAGENTA = "\033[95m"
+
+# === [ MENSAJES DE ERROR ESTÃNDAR ] ===
+ERROR_TIMEOUT = "[TIMEOUT] Se alcanzo el tiempo limite esperando boton de descarga"
+ERROR_NO_LINK = "[ERROR] No se pudo resolver un link de descarga valido"
+ERROR_PAGINA_VACIA = "[EMPTY] Pagina sin resultados o sin animes listados"
+ERROR_NO_SCRIPT = "[ERROR] No se encontro el bloque <script> esperado con 'animes ='"
+
+# === [ ESTADOS INTERNOS DE PROCESAMIENTO ] ===
+ESTADO_RESUELTO = "resuelto"
+ESTADO_PENDIENTE = "pendiente"
+ESTADO_SIN_LINKS = "sin_links"
+
+# === [ IDENTIFICADORES DE DRIVER Y NAVEGADOR ] ===
+BROWSER_CHROME = "chrome"
+BROWSER_FIREFOX = "firefox"
+MODO_HEADLESS = "headless"
+NOMBRE_PERFIL_TEMP = "temp_driver"
+
+# === [ HEADERS ESTÃNDAR USADOS EN REQUESTS ] ===
+HEADER_USER_AGENT = "User-Agent"
+HEADER_REFERER = "Referer"
+
+# === [ SELECTORES Y CLASES HTML COMUNES ] ===
+ID_BOTON_MEGA = "dwld"
+CLASS_DIV_MEGA = "download"
+PATRON_SCRIPT_ANIMES = "animes ="
+
+==== C:\dev\projects\bloodline_extractor\bak\directorio.py ====
+import re
+import json
+from bs4 import BeautifulSoup
+from config import HEADERS
+from driver import obtener_html_renderizado, crear_driver_configurado
+
+BASE_URL = "https://jkanime.net"
+
+def construir_url_directorio(estado="finalizados", pagina=1, orden="desc"):
+    url = f"{BASE_URL}/directorio?estado={estado}"
+    if orden == "asc":
+        url += "&orden=asc"
+    url += f"&p={pagina}"
+    return url
+
+def obtener_slugs_directorio(estado, pagina, orden="desc"):
+    url = construir_url_directorio(estado, pagina, orden)
+    html = obtener_html_renderizado(url, visible=False)
+    soup = BeautifulSoup(html, "html.parser")
+
+    script_tags = soup.find_all("script", string=re.compile(r"var animes\s*=\s*\{"))
+
+    for script in script_tags:
+        match = re.search(r"var animes\s*=\s*(\{.*?\});", script.string, re.DOTALL)
+        if match:
+            try:
+                animes_json = json.loads(match.group(1))
+                slugs = [entry["slug"] for entry in animes_json["data"]]
+                last_page = animes_json.get("last_page", pagina)
+                print(f"[DEBUG] {len(slugs)} slugs encontrados en pÃ¡gina {pagina}")
+                return slugs, last_page
+            except Exception as e:
+                print(f"[!] Error al parsear JSON en pÃ¡gina {pagina}: {e}")
+                return [], pagina
+
+    print(f"[!] No se encontrÃ³ bloque 'var animes' en la pÃ¡gina {pagina}")
+    return [], pagina
+
+==== C:\dev\projects\bloodline_extractor\bak\driver.py ====
+import undetected_chromedriver as uc
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+import time
+
+def crear_driver_configurado(visible=True):
+    options = uc.ChromeOptions()
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-popup-blocking')
+    options.add_argument('--disable-notifications')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('--mute-audio')
+    options.add_argument('--disable-logging')
+    options.add_argument('--log-level=3')
+    options.page_load_strategy = "normal"
+
+    prefs = {
+        "profile.managed_default_content_settings.images": 2,
+        "profile.default_content_setting_values.notifications": 2,
+        "profile.default_content_setting_values.popups": 2,
+        "profile.default_content_setting_values.javascript": 1
+    }
+    options.add_experimental_option("prefs", prefs)
+
+    driver = uc.Chrome(
+    driver_executable_path="C:\\WebDrivers\\chrome\\136\\chromedriver.exe",
+    browser_executable_path="C:\\PortableApps\\Chrome136\\chrome.exe",
+    options=options
+    )
+    driver.set_page_load_timeout(45)
+    return driver
+
+    if not visible:
+        options.add_argument("--window-position=4000,0")
+
+    driver = uc.Chrome(
+        options=options,
+        driver_executable_path="C:/WebDrivers/chrome/136/chromedriver.exe"
+    )
+    return driver
+
+def obtener_html_renderizado(url, visible=False):
+    driver = crear_driver_configurado(visible)
+    try:
+        driver.get("https://www.google.com")
+        time.sleep(2.5)  # evitar crash inicial sin sesiÃ³n
+        driver.get(url)
+        time.sleep(3.5)
+        html = driver.page_source
+        return html
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+
+==== C:\dev\projects\bloodline_extractor\bak\main.py ====
+import socket
+from directorio import obtener_slugs_directorio
+from metadata_extractor import extraer_metadata
+from config import LIBRARY_PATH, SAFE_SLEEP
+from utils import generar_alias
+import time
+
+print("=== BLOODLINE EXTRACTOR ===")
+
+# --- DETECCIÃ“N DE HOSTNAME ---
+nombre_pc = socket.gethostname().upper()
+print(f"[ðŸ–¥ï¸] Ejecutando en mÃ¡quina: {nombre_pc}")
+print(f"[ðŸ“‚] Biblioteca localizada en: {LIBRARY_PATH}\n")
+
+# --- SELECCIÃ“N DE ESTADO ---
+print("1. Selecciona el tipo de animes a scrapear:")
+print("   [1] Finalizados")
+print("   [2] En emisiÃ³n")
+print("   [3] Estrenos (solo metadata)")
+op_estado = input("   OpciÃ³n (1/2/3): ").strip()
+
+estado_map = {
+    "1": "finalizados",
+    "2": "emision",
+    "3": "estrenos"
+}
+estado = estado_map.get(op_estado, "finalizados")
+
+# --- SELECCIÃ“N DE ORDEN ---
+print("\n2. Â¿En quÃ© orden deseas procesar?")
+print("   [1] Descendente (por defecto)")
+print("   [2] Ascendente (de los mÃ¡s viejos a los nuevos)")
+op_orden = input("   OpciÃ³n (1/2): ").strip()
+
+orden = "asc" if op_orden == "2" else "desc"
+
+# --- VISIBILIDAD DEL NAVEGADOR ---
+print("\n3. Â¿Deseas que el navegador sea visible?")
+print("   [1] SÃ­ (Ãºtil para debug)")
+print("   [2] No (modo oculto fuera del monitor)")
+op_visible = input("   Visibilidad (1/2): ").strip()
+
+modo_oculto = (op_visible == "2")
+
+print(f"\n[âš™ï¸] Estado: {estado} â€” Orden: {orden.upper()} â€” Navegador {'oculto' if modo_oculto else 'visible'}\n")
+
+# --- INICIO DE SCRAPING ---
+pagina = 1
+ultima_pagina = None
+aliases_generados = set()
+
+while True:
+    print(f"[â†’] PÃ¡gina {pagina}")
+    slugs, ultima_pagina = obtener_slugs_directorio(estado, pagina, orden)
+    if not slugs:
+        print(f"[âœ“] No se encontraron mÃ¡s animes en la pÃ¡gina {pagina}. Fin del scraping.")
+        break
+
+    for slug in slugs:
+        try:
+            alias = generar_alias(slug, existentes=aliases_generados)
+            aliases_generados.add(alias)
+            extraer_metadata(slug, alias, modo_oculto=modo_oculto)
+
+        except Exception as e:
+            print(f"[!] Error en {slug}: {e}")
+
+    if pagina >= ultima_pagina:
+        print(f"[ðŸ] Reached last page: {ultima_pagina}")
+        break
+
+    pagina += 1
+    print("[ðŸ’¤] Descansando un poco antes de pasar a la siguiente pÃ¡gina...\n")
+    time.sleep(SAFE_SLEEP())
+
+print("\n[ðŸ§¹] Proceso finalizado.")
+
+==== C:\dev\projects\bloodline_extractor\bak\mega_extractor_embed.py ====
+import os
+import time
+import csv
+import re
+import requests
+import cloudscraper
+from bs4 import BeautifulSoup
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import undetected_chromedriver as uc
+
+BASE_URL = "https://jkanime.net"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+}
+
+scraper = cloudscraper.create_scraper()
+
+# Espera aleatoria entre 2.5 y 3.5 segundos
+def SAFE_SLEEP():
+    import random
+    time.sleep(random.uniform(2.5, 3.5))
+
+def formatear_episodio(n):
+    return f"ep{int(n)}"
+
+def resolver_link_proxy(proxy_url, driver):
+    try:
+        resp = requests.get(proxy_url, headers=HEADERS, allow_redirects=True, timeout=(5, 15))
+        if "mega.nz" in resp.url:
+            return resp.url
+    except:
+        pass
+
+    try:
+        driver.get(proxy_url)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+        iframe = driver.find_element(By.TAG_NAME, "iframe")
+        return iframe.get_attribute("src") if iframe and "mega.nz" in iframe.get_attribute("src") else None
+    except:
+        return None
+
+def verificar_link_mega(link, driver):
+    try:
+        driver.get(link)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        try:
+            WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label='Aceptar todo']"))
+            ).click()
+            time.sleep(1)
+        except:
+            pass
+        return esperar_botones_descarga(driver)
+    except:
+        return False
+
+def esperar_botones_descarga(driver, timeout=3):
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "button.js-standard-download, a.js-standard-download"))
+        )
+        return True
+    except:
+        return False
+
+def extraer_link_mega(slug, alias, episodio, driver, library_path):
+    episodio_tag = formatear_episodio(episodio)
+    episodio_url = f"{BASE_URL}/{slug}/{episodio}/"
+    print(f"[â–¶] Revisando episodio: {episodio_url}")
+
+    try:
+        driver.get(episodio_url)
+        SAFE_SLEEP()
+
+        if "404" in driver.title or "PÃ¡gina no encontrada" in driver.page_source:
+            print(f"  [âŒ] PÃ¡gina inexistente para {episodio_tag}")
+            return None
+
+        WebDriverWait(driver, 12).until(EC.element_to_be_clickable((By.ID, "dwld"))).click()
+        SAFE_SLEEP()
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        tabla = soup.find("div", class_="download")
+        if tabla:
+            for fila in tabla.find_all("tr"):
+                celdas = fila.find_all("td")
+                if len(celdas) >= 4 and "mega" in celdas[0].text.lower():
+                    a = celdas[3].find("a")
+                    if a and a.has_attr("href"):
+                        proxy_url = a["href"]
+                        final_url = resolver_link_proxy(proxy_url, driver)
+                        if final_url and "mega.nz" in final_url and verificar_link_mega(final_url, driver):
+                            print(f"  [+] {episodio_tag}: {final_url}")
+                            guardar_links_csv(os.path.join(library_path, alias, f"{alias}_mega_links.csv"), [(episodio_tag, final_url)], slug, library_path)
+                            return final_url
+
+        print(f"  [âš ï¸] No se encontrÃ³ link MEGA para {episodio_tag}")
+        return None
+
+    except Exception as e:
+        print(f"  [!] Error al procesar {episodio_tag}: {e}")
+        return None
+
+def guardar_links_csv(path, links, slug, library_path):
+    existentes = set()
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and row[0]:
+                    existentes.add(row[0])
+
+    with open(path, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        if os.stat(path).st_size == 0 or not existentes:
+            writer.writerow(["episodio", "link_mega", "ruta_destino"])
+
+        ruta_destino = os.path.join(library_path, slug)
+        for episodio, link in links:
+            if episodio not in existentes:
+                writer.writerow([episodio, link, ruta_destino])
+
+==== C:\dev\projects\bloodline_extractor\bak\metadata_extractor.py ====
+import os
+import re
+import csv
+import time
+import cloudscraper
+import requests
+from bs4 import BeautifulSoup
+from config import LIBRARY_PATH
+from utils import generar_alias
+from mega_extractor_embed import extraer_link_mega
+from driver import crear_driver_configurado
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+}
+
+BASE_URL = "https://jkanime.net"
+
+def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True):
+    if alias is None:
+        alias = generar_alias(slug, existentes_aliases)
+
+    carpeta_destino = os.path.join(LIBRARY_PATH, alias)
+    os.makedirs(carpeta_destino, exist_ok=True)
+
+    metadata_csv_path = os.path.join(carpeta_destino, f"{alias}_metadata.csv")
+    imagen_path = os.path.join(carpeta_destino, f"{alias}.jpg")
+
+    if os.path.exists(metadata_csv_path):
+        try:
+            with open(metadata_csv_path, encoding="utf-8") as f:
+                if f.read().strip():
+                    print(f"  [â©] Metadata ya guardada: {alias}_metadata.csv")
+                    return True
+        except:
+            pass
+
+    try:
+        scraper = cloudscraper.create_scraper()
+        url = f"{BASE_URL}/{slug}/"
+        res = scraper.get(url, headers=HEADERS)
+        if res.status_code != 200:
+            print(f"[!] Error al acceder a {url} (status {res.status_code})")
+            return False
+
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        info_box = soup.select_one(".anime_info")
+        datos_box = soup.select_one(".anime_data")
+
+        # --- Titulo y sinopsis ---
+        titulo = info_box.find("h3").text.strip() if info_box and info_box.find("h3") else slug
+        sinopsis_tag = info_box.find("p", class_="scroll") if info_box else None
+        sinopsis = sinopsis_tag.text.strip() if sinopsis_tag else ""
+        sinopsis = sinopsis.replace("\n", " ").replace("\r", " ").strip()
+
+        # --- Imagen ---
+        img_tag = info_box.find("img") if info_box else None
+        imagen_url = img_tag["src"] if img_tag and img_tag.has_attr("src") else ""
+        if imagen_url.startswith("//"):
+            imagen_url = "https:" + imagen_url
+        elif imagen_url.startswith("/"):
+            imagen_url = BASE_URL + imagen_url
+
+        # --- Generos ---
+        generos = ""
+        if datos_box:
+            genero_tags = datos_box.select("li span:-soup-contains('Generos') ~ a")
+            generos = ", ".join([a.text.strip() for a in genero_tags])
+
+        # --- Estado ---
+        estado_div = info_box.select_one(".dropmenu") if info_box else None
+        estado = estado_div["data-status"].capitalize() if estado_div and estado_div.has_attr("data-status") else "Desconocido"
+
+        # --- Extras ---
+        def extraer_valor(label):
+            if not datos_box:
+                return ""
+            for li in datos_box.find_all("li"):
+                span = li.find("span")
+                if span and label.lower() in span.text.lower():
+                    return li.text.replace(span.text, "").strip()
+            return ""
+
+        tipo = extraer_valor("Tipo") or "Serie"
+        idioma = "JaponÃ©s"
+        episodios = extraer_valor("Episodios")
+        emitido = extraer_valor("Emitido")
+        anio = ""
+        if emitido:
+            match = re.search(r"(\d{4})", emitido)
+            if match:
+                anio = match.group(1)
+
+        # --- Guardar imagen local ---
+        if imagen_url:
+            try:
+                img_response = requests.get(imagen_url, headers=HEADERS, timeout=10)
+                img_response.raise_for_status()
+                with open(imagen_path, "wb") as f:
+                    f.write(img_response.content)
+                print(f"  [ðŸ–¼ï¸] Imagen guardada como {alias}.jpg")
+            except Exception as e:
+                print(f"  [!] Error al guardar imagen de {slug}: {e}")
+        else:
+            print(f"  [âš ï¸] No se encontrÃ³ imagen para {slug}")
+
+        # --- Guardar CSV ---
+        with open(metadata_csv_path, mode="w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["titulo", "sinopsis", "generos", "estado", "episodios", "tipo", "idioma", "anio"])
+            writer.writerow([titulo, sinopsis, generos, estado, episodios, tipo, idioma, anio])
+
+        print(f"  [ðŸ“] Metadata guardada: {metadata_csv_path}")
+
+        # === INICIO EXTRACCIÃ“N MEGA ===
+        try:
+            total_eps = int(episodios.strip()) if episodios.strip().isdigit() else 0
+        except:
+            total_eps = 0
+
+        if total_eps > 0:
+            print(f"  [ðŸ”—] Iniciando extracciÃ³n de enlaces MEGA para {total_eps} episodios...")
+            driver = crear_driver_configurado(visible=not modo_oculto)
+            for ep in range(1, total_eps + 1):
+                extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+            driver.quit()
+        else:
+            print(f"  [âš ï¸] Episodios desconocidos o sin formato vÃ¡lido. No se extraerÃ¡n enlaces MEGA.")
+
+        return True
+
+    except Exception as e:
+        print(f"[!] Error extrayendo metadata de {slug}: {e}")
+        return False
+
+==== C:\dev\projects\bloodline_extractor\bak\utils.py ====
+def generar_alias(slug, existentes=None, max_len=15):
+    """
+    Genera un alias legible a partir de un slug.
+
+    :param slug: Texto tipo slug separado por guiones.
+    :param existentes: Conjunto opcional de alias ya usados para evitar duplicados.
+    :param max_len: Longitud mÃ¡xima del alias.
+    :return: Alias generado.
+    """
+    partes = [p for p in slug.split("-") if len(p) > 2]  # evita preposiciones y basura
+    alias = ""
+
+    for p in partes:
+        if len(alias + p.capitalize()) <= max_len:
+            alias += p.capitalize()
+        else:
+            break
+
+    if not alias:
+        alias = slug[:max_len].replace("-", "").capitalize()
+
+    original_alias = alias
+    contador = 1
+    while existentes and alias in existentes:
+        alias = f"{original_alias[:max_len - len(str(contador))]}{contador}"
+        contador += 1
+
+    return alias
+
+    import csv
+import os
+import re
+from config import LIBRARY_PATH
+
+def episodios_mega_guardados(alias, total_esperado):
+    """Verifica cuÃ¡ntos episodios con link MEGA han sido extraÃ­dos y guardados en el CSV correspondiente."""
+    path = os.path.join(LIBRARY_PATH, alias, f"{alias}_mega_links.csv")
+    episodios = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # Saltar cabecera
+            for row in reader:
+                if row and row[0].startswith("ep"):
+                    try:
+                        num = int(re.sub(r"\D", "", row[0]))
+                        episodios.add(num)
+                    except:
+                        continue
+    return len(episodios), episodios
+

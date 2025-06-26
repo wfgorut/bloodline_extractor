@@ -9,6 +9,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import undetected_chromedriver as uc
+from driver import cerrar_tabs_adicionales
+from progreso import registrar_faltante, registrar_exito
 
 BASE_URL = "https://jkanime.net"
 HEADERS = {
@@ -76,13 +78,16 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
 
         if "404" in driver.title or "Página no encontrada" in driver.page_source:
             print(f"  [❌] Página inexistente para {episodio_tag}")
+            registrar_faltante(slug, alias, episodio_tag)
             return None
 
         WebDriverWait(driver, 12).until(EC.element_to_be_clickable((By.ID, "dwld"))).click()
+        cerrar_tabs_adicionales(driver)
         SAFE_SLEEP()
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
         tabla = soup.find("div", class_="download")
+        cerrar_tabs_adicionales(driver)
         if tabla:
             for fila in tabla.find_all("tr"):
                 celdas = fila.find_all("td")
@@ -94,13 +99,16 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                         if final_url and "mega.nz" in final_url and verificar_link_mega(final_url, driver):
                             print(f"  [+] {episodio_tag}: {final_url}")
                             guardar_links_csv(os.path.join(library_path, alias, f"{alias}_mega_links.csv"), [(episodio_tag, final_url)], slug, library_path)
+                            registrar_exito(slug, alias, episodio_tag)
                             return final_url
 
         print(f"  [⚠️] No se encontró link MEGA para {episodio_tag}")
+        registrar_faltante(slug, alias, episodio_tag)
         return None
 
     except Exception as e:
         print(f"  [!] Error al procesar {episodio_tag}: {e}")
+        registrar_faltante(slug, alias, episodio_tag)
         return None
 
 def guardar_links_csv(path, links, slug, library_path):

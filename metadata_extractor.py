@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from config import LIBRARY_PATH
 from utils import generar_alias
 from mega_extractor_embed import extraer_link_mega
-from driver import crear_driver_configurado
+from driver import crear_driver_configurado, cerrar_tabs_adicionales
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
@@ -16,7 +16,7 @@ HEADERS = {
 
 BASE_URL = "https://jkanime.net"
 
-def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True):
+def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True, driver=None):
     if alias is None:
         alias = generar_alias(slug, existentes_aliases)
 
@@ -115,16 +115,33 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
 
         # === INICIO EXTRACCIÓN MEGA ===
         try:
-            total_eps = int(episodios.strip()) if episodios.strip().isdigit() else 0
+            encontrados = re.findall(r"\d+", episodios)
+            if encontrados:
+                total_eps = int(encontrados[-1])
+            else:
+                total_eps = 20
         except:
-            total_eps = 0
+            total_eps = 20
 
         if total_eps > 0:
             print(f"  [🔗] Iniciando extracción de enlaces MEGA para {total_eps} episodios...")
-            driver = crear_driver_configurado(visible=not modo_oculto)
+            propio = False
+            if driver is None:
+                driver = crear_driver_configurado(visible=not modo_oculto)
+                propio = True
+
+            links_validos = 0
             for ep in range(1, total_eps + 1):
-                extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
-            driver.quit()
+                resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+                cerrar_tabs_adicionales(driver)
+                if resultado:
+                    links_validos += 1
+
+            if links_validos == 0:
+                print(f"  [⚠️] No se encontró ningún link MEGA válido para {slug}")
+
+            if propio:
+                driver.quit()
         else:
             print(f"  [⚠️] Episodios desconocidos o sin formato válido. No se extraerán enlaces MEGA.")
 

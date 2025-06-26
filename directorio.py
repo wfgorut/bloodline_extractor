@@ -13,11 +13,11 @@ def construir_url_directorio(estado="finalizados", pagina=1, orden="desc"):
     url += f"&p={pagina}"
     return url
 
-def obtener_slugs_directorio(estado, pagina, orden="desc"):
+def obtener_slugs_directorio(estado, pagina, orden="desc", driver=None):  # ← Nuevo parámetro
     url = construir_url_directorio(estado, pagina, orden)
-    html = obtener_html_renderizado(url, visible=False)
-    soup = BeautifulSoup(html, "html.parser")
+    html = obtener_html_renderizado(url, visible=False, driver=driver)  # ← Se pasa driver
 
+    soup = BeautifulSoup(html, "html.parser")
     script_tags = soup.find_all("script", string=re.compile(r"var animes\s*=\s*\{"))
 
     for script in script_tags:
