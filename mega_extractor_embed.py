@@ -101,7 +101,7 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                             guardar_links_csv(
                                 os.path.join(library_path, alias, f"mega_{alias}.csv"),
                                 [(episodio_tag, final_url)],
-                                slug, library_path
+                                alias, library_path
                             )
                             registrar_exito(slug, alias, episodio_tag)
                             return {"estado": "ok", "link": final_url, "episodio_tag": episodio_tag}
