@@ -252,7 +252,7 @@ HEADERS = {
 
 scraper = cloudscraper.create_scraper()
 
-# Espera aleatoria entre 0.5 y 2.5 segundos
+# Espera aleatoria entre 0.5 y .5 segundos
 def SAFE_SLEEP():
     import random
     time.sleep(random.uniform(0.5, 2.5))
@@ -301,7 +301,7 @@ def esperar_botones_descarga(driver, timeout=3):
         return False
 
 def extraer_link_mega(slug, alias, episodio, driver, library_path):
-    episodio_tag = formatear_episodio(episodio)
+    episodio_tag = formatear_episodio(episodio)  # <- Solo aquÃ­ formateamos ep
     episodio_url = f"{BASE_URL}/{slug}/{episodio}/"
     print(f"[CHECKING] Revisando episodio: {episodio_url}")
 
@@ -312,7 +312,7 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
         if "404" in driver.title or "PÃ¡gina no encontrada" in driver.page_source:
             print(f"  [VOID] PÃ¡gina inexistente para {episodio_tag}")
             registrar_faltante(slug, alias, episodio_tag)
-            return {"estado": "404", "link": None}
+            return {"estado": "404", "link": None, "episodio_tag": episodio_tag}
 
         WebDriverWait(driver, 12).until(EC.element_to_be_clickable((By.ID, "dwld"))).click()
         cerrar_tabs_adicionales(driver)
@@ -332,23 +332,23 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                         if final_url and "mega.nz" in final_url and verificar_link_mega(final_url, driver):
                             print(f"  [SUCCESS] {episodio_tag}: {final_url}")
                             guardar_links_csv(
-                                os.path.join(library_path, alias, f"{alias}_mega_links.csv"),
+                                os.path.join(library_path, alias, f"mega_{alias}.csv"),
                                 [(episodio_tag, final_url)],
                                 slug, library_path
                             )
                             registrar_exito(slug, alias, episodio_tag)
-                            return {"estado": "ok", "link": final_url}
+                            return {"estado": "ok", "link": final_url, "episodio_tag": episodio_tag}
 
         print(f"  [WARNING] No se encontrÃ³ link MEGA para {episodio_tag}")
         registrar_faltante(slug, alias, episodio_tag)
-        return {"estado": "no_link", "link": None}
+        return {"estado": "no_link", "link": None, "episodio_tag": episodio_tag}
 
     except Exception as e:
         print(f"  [ERROR] Error al procesar {episodio_tag}: {e}")
         registrar_faltante(slug, alias, episodio_tag)
-        return {"estado": "error", "link": None}
+        return {"estado": "error", "link": None, "episodio_tag": episodio_tag}
 
-def guardar_links_csv(path, links, slug, library_path):
+def guardar_links_csv(path, links, alias, library_path):
     existentes = set()
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -363,7 +363,7 @@ def guardar_links_csv(path, links, slug, library_path):
         if os.stat(path).st_size == 0 or not existentes:
             writer.writerow(["episodio", "link_mega", "ruta_destino"])
 
-        ruta_destino = os.path.join(library_path, slug)
+        ruta_destino = os.path.join(library_path, alias)
         for episodio, link in links:
             if episodio not in existentes:
                 writer.writerow([episodio, link, ruta_destino])
@@ -522,15 +522,130 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
         print(f"[ERROR] Error extrayendo metadata de {slug}: {e}")
         return False
 
+==== C:\dev\projects\bloodline_extractor\mf_extractor_embed.py ====
+import os
+import csv
+import time
+import requests
+from bs4 import BeautifulSoup
+from selenium.webdriver.common.by import By
+from driver import cerrar_tabs_adicionales
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+TIMEOUT = 10
+
+def guardar_links_mediafire_csv(path, links, alias, library_path):
+    existentes = set()
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and row[0]:
+                    existentes.add(row[0])
+
+    with open(path, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        if os.stat(path).st_size == 0 or not existentes:
+            writer.writerow(["episodio", "link_mediafire", "ruta_destino"])
+
+        ruta_destino = os.path.join(library_path, alias)
+        for episodio, link in links:
+            if episodio not in existentes:
+                writer.writerow([episodio, link, ruta_destino])
+
+def validar_link_final(link):
+    try:
+        r = requests.head(link, allow_redirects=True, timeout=10)
+        return r.status_code == 200
+    except:
+        return False
+
+def resolver_link_mediafire(driver, proxy_url):
+    try:
+        driver.get(proxy_url)
+        WebDriverWait(driver, TIMEOUT).until(lambda d: "mediafire.com/file" in d.current_url)
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        boton = soup.find("a", id="downloadButton")
+
+        if boton and boton.has_attr("href") and "error.php" not in boton["href"]:
+            final = boton["href"]
+            if validar_link_final(final):
+                print(f"    [SUCCESS] Link MediaFire resuelto: {final}")
+                return final
+        return None
+    except:
+        return None
+
+def extraer_link_mediafire(slug, alias, episodio_tag, episodio_url, driver, folder_path):
+    print(f"  [FALLBACK] Verificando MediaFire para {episodio_url}")
+    try:
+        driver.get(episodio_url)
+        cerrar_tabs_adicionales(driver)
+        time.sleep(2)
+
+        if "404" in driver.title or "Oops" in driver.page_source:
+            print("    [ERROR] PÃ¡gina 404 detectada, abortando fallback.")
+            return {"estado": "no_link", "motivo": "pagina_404"}
+
+        try:
+            WebDriverWait(driver, TIMEOUT).until(
+                EC.element_to_be_clickable((By.ID, "dwld"))
+            ).click()
+            cerrar_tabs_adicionales(driver)
+            time.sleep(1.5)
+        except Exception as e:
+            print(f"    [WARNING] No se pudo hacer clic en botÃ³n de mirrors: {e}")
+            return {"estado": "no_link", "motivo": "no_se_pudo_abrir_mirrors"}
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        tabla = soup.find("div", class_="download")
+        if not tabla:
+            print("    [WARNING] No se encontrÃ³ la tabla de mirrors.")
+            return {"estado": "no_link", "motivo": "sin_tabla_mirrors"}
+
+        mirrors_disponibles = []
+        for fila in tabla.find_all("tr"):
+            celdas = fila.find_all("td")
+            if len(celdas) >= 4:
+                server = celdas[0].text.strip().lower()
+                a = celdas[3].find("a")
+                if a and a.has_attr("href"):
+                    mirrors_disponibles.append((server, a["href"]))
+
+        for server, link in mirrors_disponibles:
+            if server != "mediafire":
+                continue
+            link_final = resolver_link_mediafire(driver, link)
+            if link_final:
+                # RUTA FINAL DEL CSV â†’ D:/catalog/BloodlineLibrary/anime/ALIAS/mediafire_ALIAS.csv
+                path_csv = os.path.join(folder_path, f"mediafire_{alias}.csv")
+                guardar_links_mediafire_csv(path_csv, [(episodio_tag, link_final)], slug, folder_path)
+                return {
+                    "estado": "ok",
+                    "servidor": "Mediafire",
+                    "link": link_final,
+                    "episodio_tag": episodio_tag
+                }
+
+        print("    [WARNING] NingÃºn link vÃ¡lido de MediaFire fue resuelto.")
+        return {"estado": "no_link", "motivo": "sin_mediafire_valido"}
+
+    except Exception as e:
+        print(f"    [ERROR] Fallback MediaFire fallÃ³: {e}")
+        return {"estado": "no_link", "motivo": "excepcion"}
+
 ==== C:\dev\projects\bloodline_extractor\procesar_anime.py ====
 import os
 import time
 from mega_extractor_embed import extraer_link_mega
 from metadata_extractor import extraer_metadata
+from mf_extractor_embed import extraer_link_mediafire
 from utils import generar_alias
 from config import LIBRARY_PATH, SAFE_SLEEP
 from driver import cerrar_tabs_adicionales
-from progreso import registrar_exito, registrar_faltante, marcar_completado
+from progreso import registrar_exito, registrar_faltante, marcar_completado, obtener_ultimo_consultado
 
 def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     """
@@ -549,12 +664,12 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
         print(f"[WARNING] Metadata invÃ¡lida o incompleta para {slug}. Se activa exploraciÃ³n extendida.")
 
     links_validos = 0
-    ep = 1
+    # ðŸ†• Arranca desde el Ãºltimo episodio consultado + 1
+    ep = obtener_ultimo_consultado(slug) + 1
 
-    print(f"  [CHECKING] Explorando episodios para {slug}...")
+    print(f"  [CHECKING] Explorando episodios para {slug} desde ep{ep}...")
 
     while True:
-        ep_tag = f"ep{ep:02}"
         resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
         cerrar_tabs_adicionales(driver)
 
@@ -563,13 +678,21 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
             break
 
         if resultado["estado"] == "ok":
-            print(f"  [SUCCESS] Episodio {ep:02} OK")
-            registrar_exito(slug, alias, ep_tag)
+            print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
+            registrar_exito(slug, alias, resultado['episodio_tag'])
             links_validos += 1
         else:
-            print(f"  [VOID] Episodio {ep:02} no disponible")
-            registrar_faltante(slug, alias, ep_tag)
-            # âš ï¸ No abortar por error, solo avanzar al siguiente episodio
+            print(f"  [VOID] No hay link vÃ¡lido en MEGA. Intentando fallback MediaFire...")
+            url_episodio = f"https://jkanime.net/{slug}/{ep}/"
+            fallback = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
+            
+            if fallback["estado"] == "ok":
+                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
+                registrar_exito(slug, alias, resultado['episodio_tag'])
+                links_validos += 1
+            else:
+                print(f"  [FAIL] Sin links vÃ¡lidos para {resultado['episodio_tag']}")
+                registrar_faltante(slug, alias, resultado['episodio_tag'])
 
         ep += 1
         time.sleep(SAFE_SLEEP())
@@ -605,30 +728,61 @@ def timestamp():
 def registrar_faltante(slug, alias, ep_tag):
     data = cargar_progress()
     if slug not in data:
-        data[slug] = {"alias": alias, "links_validos": 0, "faltantes": [], "intentos": {}, "completado": False}
+        data[slug] = {
+            "alias": alias,
+            "episodios_totales_declarados": 0,
+            "episodios_exitosos": [],
+            "episodios_faltantes": [],
+            "episodios_consultados": [],
+            "modo_exploratorio": True,
+            "completado": False,
+        }
 
     anime = data[slug]
-    anime.setdefault("faltantes", [])
-    anime.setdefault("intentos", {})
 
-    if ep_tag not in anime["faltantes"]:
-        anime["faltantes"].append(ep_tag)
-    anime["intentos"][ep_tag] = anime["intentos"].get(ep_tag, 0) + 1
+    if ep_tag not in anime["episodios_faltantes"]:
+        anime["episodios_faltantes"].append(ep_tag)
+
+    if ep_tag not in anime["episodios_consultados"]:
+        anime["episodios_consultados"].append(ep_tag)
+
     anime["timestamp"] = timestamp()
-
     guardar_progress(data)
 
 def registrar_exito(slug, alias, ep_tag):
     data = cargar_progress()
     if slug not in data:
-        data[slug] = {"alias": alias, "links_validos": 0, "faltantes": [], "intentos": {}, "completado": False}
+        data[slug] = {
+            "alias": alias,
+            "episodios_totales_declarados": 0,
+            "episodios_exitosos": [],
+            "episodios_faltantes": [],
+            "episodios_consultados": [],
+            "modo_exploratorio": True,
+            "completado": False,
+        }
 
     anime = data[slug]
-    anime["links_validos"] += 1
-    if ep_tag in anime.get("faltantes", []):
-        anime["faltantes"].remove(ep_tag)
-    anime["timestamp"] = timestamp()
 
+    # AÃ±ade a episodios exitosos si no estaba
+    if ep_tag not in anime["episodios_exitosos"]:
+        anime["episodios_exitosos"].append(ep_tag)
+
+    # Quita de episodios_faltantes si estaba
+    if ep_tag in anime.get("episodios_faltantes", []):
+        anime["episodios_faltantes"].remove(ep_tag)
+
+    # AÃ±ade a episodios_consultados si no estaba
+    if ep_tag not in anime["episodios_consultados"]:
+        anime["episodios_consultados"].append(ep_tag)
+
+    # Actualiza completado solo si no es modo exploratorio y ya tienes todos los episodios
+    totales = anime.get("episodios_totales_declarados") or 0
+    if not anime.get("modo_exploratorio", True) and totales > 0:
+        if len(anime["episodios_exitosos"]) >= totales:
+            anime["completado"] = True
+
+    anime["timestamp"] = timestamp()
     guardar_progress(data)
 
 def marcar_completado(slug):
@@ -641,7 +795,20 @@ def marcar_completado(slug):
 def obtener_faltantes(slug):
     data = cargar_progress()
     anime = data.get(slug, {})
-    return anime.get("faltantes", [])
+    return anime.get("episodios_faltantes", [])
+
+def obtener_ultimo_consultado(slug):
+    data = cargar_progress()
+    anime = data.get(slug, {})
+    episodios_consultados = anime.get("episodios_consultados", [])
+    if not episodios_consultados:
+        return 0  # No hay episodios consultados, empieza desde 1
+    # Sacar el nÃºmero del Ãºltimo episodio consultado
+    ult_tag = episodios_consultados[-1]  # Ãºltimo episodio tipo "ep4"
+    try:
+        return int(ult_tag.replace("ep", ""))  # extraer el nÃºmero
+    except:
+        return 0
 
 ==== C:\dev\projects\bloodline_extractor\utils.py ====
 import csv

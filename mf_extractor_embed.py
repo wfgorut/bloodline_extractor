@@ -96,7 +96,7 @@ def extraer_link_mediafire(slug, alias, episodio_tag, episodio_url, driver, fold
             if link_final:
                 # RUTA FINAL DEL CSV → D:/catalog/BloodlineLibrary/anime/ALIAS/mediafire_ALIAS.csv
                 path_csv = os.path.join(folder_path, f"mediafire_{alias}.csv")
-                guardar_links_mediafire_csv(path_csv, [(episodio_tag, link_final)], slug, folder_path)
+                guardar_links_mediafire_csv(path_csv, [(episodio_tag, link_final)], alias, folder_path)
                 return {
                     "estado": "ok",
                     "servidor": "Mediafire",
