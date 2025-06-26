@@ -1,5 +1,4 @@
 import os
-import re
 import time
 from mega_extractor_embed import extraer_link_mega
 from metadata_extractor import extraer_metadata
@@ -10,8 +9,8 @@ from progreso import registrar_exito, registrar_faltante, marcar_completado
 
 def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     """
-    Procesa un anime: extrae metadata, busca episodios, guarda links MEGA.
-    Usa modo exploratorio con errores consecutivos para terminar.
+    Procesa un anime: extrae metadata, explora episodios, guarda links MEGA.
+    Solo se detiene si se detecta 404 en jkanime.net/{slug}/{n}.
     """
     if alias is None:
         alias = generar_alias(slug)
@@ -22,35 +21,35 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     # --- METADATA ---
     success = extraer_metadata(slug, alias, modo_oculto=modo_oculto, driver=driver)
     if not success:
-        print(f"[!] No se pudo extraer metadata de {slug}. Abortando procesamiento.")
-        return False
+        print(f"[⚠️] Metadata inválida o incompleta para {slug}. Se activa exploración extendida.")
 
-    # --- MODO EXPLORATORIO DE EPISODIOS ---
-    print(f"  [🔍] Explorando episodios para {slug}...")
-    errores_consecutivos = 0
-    MAX_ERRORES = 2
-    ep = 1
     links_validos = 0
+    ep = 1
 
-    while errores_consecutivos < MAX_ERRORES:
+    print(f"  [🔍] Explorando episodios para {slug}...")
+
+    while True:
         ep_tag = f"ep{ep:02}"
         resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
         cerrar_tabs_adicionales(driver)
 
-        if resultado:
+        if resultado["estado"] == "404":
+            print(f"  [🚫] Slug agotado en {slug}/{ep}/ (404)")
+            break
+
+        if resultado["estado"] == "ok":
             print(f"  [+] Episodio {ep:02} OK")
-            links_validos += 1
             registrar_exito(slug, alias, ep_tag)
-            errores_consecutivos = 0
+            links_validos += 1
         else:
             print(f"  [✖] Episodio {ep:02} no disponible")
             registrar_faltante(slug, alias, ep_tag)
-            errores_consecutivos += 1
+            # ⚠️ No abortar por error, solo avanzar al siguiente episodio
 
         ep += 1
         time.sleep(SAFE_SLEEP())
 
-    if errores_consecutivos < MAX_ERRORES and links_validos > 0:
+    if links_validos > 0:
         marcar_completado(slug)
 
     print(f"  [✓] Finalizado {slug}: {links_validos} enlaces MEGA válidos.")

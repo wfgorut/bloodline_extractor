@@ -30,7 +30,7 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
         try:
             with open(metadata_csv_path, encoding="utf-8") as f:
                 if f.read().strip():
-                    print(f"  [⏩] Metadata ya guardada: {alias}_metadata.csv")
+                    print(f"  [SUCCESS] Metadata guardada: {alias}_metadata.csv")
                     return True
         except:
             pass
@@ -99,11 +99,11 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
                 img_response.raise_for_status()
                 with open(imagen_path, "wb") as f:
                     f.write(img_response.content)
-                print(f"  [🖼️] Imagen guardada como {alias}.jpg")
+                print(f"  [SUCCESS] Imagen guardada como {alias}.jpg")
             except Exception as e:
-                print(f"  [!] Error al guardar imagen de {slug}: {e}")
+                print(f"  [ERROR] Error al guardar imagen de {slug}: {e}")
         else:
-            print(f"  [⚠️] No se encontró imagen para {slug}")
+            print(f"  [WARNING] No se encontró imagen para {slug}")
 
         # --- Guardar CSV ---
         with open(metadata_csv_path, mode="w", encoding="utf-8-sig", newline="") as f:
@@ -111,7 +111,7 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
             writer.writerow(["titulo", "sinopsis", "generos", "estado", "episodios", "tipo", "idioma", "anio"])
             writer.writerow([titulo, sinopsis, generos, estado, episodios, tipo, idioma, anio])
 
-        print(f"  [📝] Metadata guardada: {metadata_csv_path}")
+        print(f"  [SUCCESS] Metadata guardada: {metadata_csv_path}")
 
         # === INICIO EXTRACCIÓN MEGA ===
         try:
@@ -124,7 +124,7 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
             total_eps = 20
 
         if total_eps > 0:
-            print(f"  [🔗] Iniciando extracción de enlaces MEGA para {total_eps} episodios...")
+            print(f"  [SUCCESS] Iniciando extracción de enlaces MEGA para {total_eps} episodios...")
             propio = False
             if driver is None:
                 driver = crear_driver_configurado(visible=not modo_oculto)
@@ -138,15 +138,15 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
                     links_validos += 1
 
             if links_validos == 0:
-                print(f"  [⚠️] No se encontró ningún link MEGA válido para {slug}")
+                print(f"  [WARNING] No se encontró ningún link MEGA válido para {slug}")
 
             if propio:
                 driver.quit()
         else:
-            print(f"  [⚠️] Episodios desconocidos o sin formato válido. No se extraerán enlaces MEGA.")
+            print(f"  [WARNING] Cantidad de episodios episodios desconocido. Entrando en modo exploratorio.")
 
         return True
 
     except Exception as e:
-        print(f"[!] Error extrayendo metadata de {slug}: {e}")
+        print(f"[ERROR] Error extrayendo metadata de {slug}: {e}")
         return False

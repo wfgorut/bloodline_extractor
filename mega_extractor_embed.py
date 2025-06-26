@@ -79,7 +79,7 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
         if "404" in driver.title or "Página no encontrada" in driver.page_source:
             print(f"  [❌] Página inexistente para {episodio_tag}")
             registrar_faltante(slug, alias, episodio_tag)
-            return None
+            return {"estado": "404", "link": None}
 
         WebDriverWait(driver, 12).until(EC.element_to_be_clickable((By.ID, "dwld"))).click()
         cerrar_tabs_adicionales(driver)
@@ -98,18 +98,22 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                         final_url = resolver_link_proxy(proxy_url, driver)
                         if final_url and "mega.nz" in final_url and verificar_link_mega(final_url, driver):
                             print(f"  [+] {episodio_tag}: {final_url}")
-                            guardar_links_csv(os.path.join(library_path, alias, f"{alias}_mega_links.csv"), [(episodio_tag, final_url)], slug, library_path)
+                            guardar_links_csv(
+                                os.path.join(library_path, alias, f"{alias}_mega_links.csv"),
+                                [(episodio_tag, final_url)],
+                                slug, library_path
+                            )
                             registrar_exito(slug, alias, episodio_tag)
-                            return final_url
+                            return {"estado": "ok", "link": final_url}
 
         print(f"  [⚠️] No se encontró link MEGA para {episodio_tag}")
         registrar_faltante(slug, alias, episodio_tag)
-        return None
+        return {"estado": "no_link", "link": None}
 
     except Exception as e:
         print(f"  [!] Error al procesar {episodio_tag}: {e}")
         registrar_faltante(slug, alias, episodio_tag)
-        return None
+        return {"estado": "error", "link": None}
 
 def guardar_links_csv(path, links, slug, library_path):
     existentes = set()
