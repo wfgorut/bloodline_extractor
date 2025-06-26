@@ -1,3 +1,8 @@
+import csv
+import os
+import re
+from config import LIBRARY_PATH
+
 def generar_alias(slug, existentes=None, max_len=15):
     """
     Genera un alias legible a partir de un slug.
@@ -26,11 +31,6 @@ def generar_alias(slug, existentes=None, max_len=15):
         contador += 1
 
     return alias
-
-    import csv
-import os
-import re
-from config import LIBRARY_PATH
 
 def episodios_mega_guardados(alias, total_esperado):
     """Verifica cuántos episodios con link MEGA han sido extraídos y guardados en el CSV correspondiente."""
