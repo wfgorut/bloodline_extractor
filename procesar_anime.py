@@ -21,12 +21,12 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     # --- METADATA ---
     success = extraer_metadata(slug, alias, modo_oculto=modo_oculto, driver=driver)
     if not success:
-        print(f"[⚠️] Metadata inválida o incompleta para {slug}. Se activa exploración extendida.")
+        print(f"[WARNING] Metadata inválida o incompleta para {slug}. Se activa exploración extendida.")
 
     links_validos = 0
     ep = 1
 
-    print(f"  [🔍] Explorando episodios para {slug}...")
+    print(f"  [CHECKING] Explorando episodios para {slug}...")
 
     while True:
         ep_tag = f"ep{ep:02}"
@@ -34,15 +34,15 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
         cerrar_tabs_adicionales(driver)
 
         if resultado["estado"] == "404":
-            print(f"  [🚫] Slug agotado en {slug}/{ep}/ (404)")
+            print(f"  [VOID] Slug agotado en {slug}/{ep}/ (404)")
             break
 
         if resultado["estado"] == "ok":
-            print(f"  [+] Episodio {ep:02} OK")
+            print(f"  [SUCCESS] Episodio {ep:02} OK")
             registrar_exito(slug, alias, ep_tag)
             links_validos += 1
         else:
-            print(f"  [✖] Episodio {ep:02} no disponible")
+            print(f"  [VOID] Episodio {ep:02} no disponible")
             registrar_faltante(slug, alias, ep_tag)
             # ⚠️ No abortar por error, solo avanzar al siguiente episodio
 
@@ -52,5 +52,5 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     if links_validos > 0:
         marcar_completado(slug)
 
-    print(f"  [✓] Finalizado {slug}: {links_validos} enlaces MEGA válidos.")
+    print(f"  [SUCCESS] Finalizado {slug}: {links_validos} enlaces MEGA válidos.")
     return True

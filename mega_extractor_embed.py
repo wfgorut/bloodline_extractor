@@ -70,14 +70,14 @@ def esperar_botones_descarga(driver, timeout=3):
 def extraer_link_mega(slug, alias, episodio, driver, library_path):
     episodio_tag = formatear_episodio(episodio)
     episodio_url = f"{BASE_URL}/{slug}/{episodio}/"
-    print(f"[▶] Revisando episodio: {episodio_url}")
+    print(f"[CHECKING] Revisando episodio: {episodio_url}")
 
     try:
         driver.get(episodio_url)
         SAFE_SLEEP()
 
         if "404" in driver.title or "Página no encontrada" in driver.page_source:
-            print(f"  [❌] Página inexistente para {episodio_tag}")
+            print(f"  [VOID] Página inexistente para {episodio_tag}")
             registrar_faltante(slug, alias, episodio_tag)
             return {"estado": "404", "link": None}
 
@@ -97,7 +97,7 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                         proxy_url = a["href"]
                         final_url = resolver_link_proxy(proxy_url, driver)
                         if final_url and "mega.nz" in final_url and verificar_link_mega(final_url, driver):
-                            print(f"  [+] {episodio_tag}: {final_url}")
+                            print(f"  [SUCCESS] {episodio_tag}: {final_url}")
                             guardar_links_csv(
                                 os.path.join(library_path, alias, f"{alias}_mega_links.csv"),
                                 [(episodio_tag, final_url)],
@@ -106,12 +106,12 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                             registrar_exito(slug, alias, episodio_tag)
                             return {"estado": "ok", "link": final_url}
 
-        print(f"  [⚠️] No se encontró link MEGA para {episodio_tag}")
+        print(f"  [WARNING] No se encontró link MEGA para {episodio_tag}")
         registrar_faltante(slug, alias, episodio_tag)
         return {"estado": "no_link", "link": None}
 
     except Exception as e:
-        print(f"  [!] Error al procesar {episodio_tag}: {e}")
+        print(f"  [ERROR] Error al procesar {episodio_tag}: {e}")
         registrar_faltante(slug, alias, episodio_tag)
         return {"estado": "error", "link": None}
 

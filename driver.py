@@ -43,7 +43,7 @@ def obtener_html_renderizado(url, visible=False, driver=None):  # ← NUEVO PAR�
         propio = True
 
     try:
-        driver.get("https://www.google.com")
+        driver.get("https://jkanime.net")
         time.sleep(2.5)  # evitar crash inicial sin sesión
         driver.get(url)
         time.sleep(3.5)

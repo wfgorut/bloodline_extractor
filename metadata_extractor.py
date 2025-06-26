@@ -40,7 +40,7 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
         url = f"{BASE_URL}/{slug}/"
         res = scraper.get(url, headers=HEADERS)
         if res.status_code != 200:
-            print(f"[!] Error al acceder a {url} (status {res.status_code})")
+            print(f"[ERROR] Error al acceder a {url} (status {res.status_code})")
             return False
 
         soup = BeautifulSoup(res.text, "html.parser")

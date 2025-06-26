@@ -30,8 +30,8 @@ def obtener_slugs_directorio(estado, pagina, orden="desc", driver=None):  # ← 
                 print(f"[DEBUG] {len(slugs)} slugs encontrados en página {pagina}")
                 return slugs, last_page
             except Exception as e:
-                print(f"[!] Error al parsear JSON en página {pagina}: {e}")
+                print(f"[ERROR] Error al parsear JSON en página {pagina}: {e}")
                 return [], pagina
 
-    print(f"[!] No se encontró bloque 'var animes' en la página {pagina}")
+    print(f"[ERROR] No se encontró bloque 'var animes' en la página {pagina}")
     return [], pagina

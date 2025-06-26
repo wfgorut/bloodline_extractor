@@ -56,10 +56,10 @@ aliases_generados = set()
 
 try:
     while True:
-        print(f"[→] Página {pagina}")
+        print(f"[JKANIME] Página {pagina}")
         slugs, ultima_pagina = obtener_slugs_directorio(estado, pagina, orden, driver=driver)  # ← CAMBIO
         if not slugs:
-            print(f"[✓] No se encontraron más animes en la página {pagina}. Fin del scraping.")
+            print(f"[JKANIME] No se encontraron más animes en la página {pagina}. Fin del scraping.")
             break
 
         for slug in slugs:
@@ -69,17 +69,17 @@ try:
                 procesar_anime(slug, alias, driver=driver, modo_oculto=modo_oculto)  # ← CAMBIO
 
             except Exception as e:
-                print(f"[!] Error en {slug}: {e}")
+                print(f"[ERROR] Error en {slug}: {e}")
 
         if pagina >= ultima_pagina:
-            print(f"[🏁] Reached last page: {ultima_pagina}")
+            print(f"[SUCCESS] El extractor llegó a la última página: {ultima_pagina}")
             break
 
         pagina += 1
-        print("[💤] Descansando un poco antes de pasar a la siguiente página...\n")
+        print("[SLEEP] Descansando un poco antes de pasar a la siguiente página...\n")
         time.sleep(SAFE_SLEEP())
 
 finally:
     driver.quit()  # ← CIERRE ÚNICO Y SEGURO
 
-print("\n[🧹] Proceso finalizado.")
+print("\n[END] Proceso finalizado.")
