@@ -19,10 +19,10 @@ HEADERS = {
 
 scraper = cloudscraper.create_scraper()
 
-# Espera aleatoria entre 2.5 y 3.5 segundos
+# Espera aleatoria entre 0.5 y .5 segundos
 def SAFE_SLEEP():
     import random
-    time.sleep(random.uniform(2.5, 3.5))
+    time.sleep(random.uniform(0.5, 2.5))
 
 def formatear_episodio(n):
     return f"ep{int(n)}"
@@ -37,7 +37,7 @@ def resolver_link_proxy(proxy_url, driver):
 
     try:
         driver.get(proxy_url)
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+        WebDriverWait(driver, 7).until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
         iframe = driver.find_element(By.TAG_NAME, "iframe")
         return iframe.get_attribute("src") if iframe and "mega.nz" in iframe.get_attribute("src") else None
     except:
@@ -46,7 +46,7 @@ def resolver_link_proxy(proxy_url, driver):
 def verificar_link_mega(link, driver):
     try:
         driver.get(link)
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        WebDriverWait(driver, 7).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
         try:
             WebDriverWait(driver, 3).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label='Aceptar todo']"))
@@ -68,7 +68,7 @@ def esperar_botones_descarga(driver, timeout=3):
         return False
 
 def extraer_link_mega(slug, alias, episodio, driver, library_path):
-    episodio_tag = formatear_episodio(episodio)
+    episodio_tag = formatear_episodio(episodio)  # <- Solo aquí formateamos ep
     episodio_url = f"{BASE_URL}/{slug}/{episodio}/"
     print(f"[CHECKING] Revisando episodio: {episodio_url}")
 
@@ -79,7 +79,7 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
         if "404" in driver.title or "Página no encontrada" in driver.page_source:
             print(f"  [VOID] Página inexistente para {episodio_tag}")
             registrar_faltante(slug, alias, episodio_tag)
-            return {"estado": "404", "link": None}
+            return {"estado": "404", "link": None, "episodio_tag": episodio_tag}
 
         WebDriverWait(driver, 12).until(EC.element_to_be_clickable((By.ID, "dwld"))).click()
         cerrar_tabs_adicionales(driver)
@@ -99,23 +99,23 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                         if final_url and "mega.nz" in final_url and verificar_link_mega(final_url, driver):
                             print(f"  [SUCCESS] {episodio_tag}: {final_url}")
                             guardar_links_csv(
-                                os.path.join(library_path, alias, f"{alias}_mega_links.csv"),
+                                os.path.join(library_path, alias, f"mega_{alias}.csv"),
                                 [(episodio_tag, final_url)],
                                 slug, library_path
                             )
                             registrar_exito(slug, alias, episodio_tag)
-                            return {"estado": "ok", "link": final_url}
+                            return {"estado": "ok", "link": final_url, "episodio_tag": episodio_tag}
 
         print(f"  [WARNING] No se encontró link MEGA para {episodio_tag}")
         registrar_faltante(slug, alias, episodio_tag)
-        return {"estado": "no_link", "link": None}
+        return {"estado": "no_link", "link": None, "episodio_tag": episodio_tag}
 
     except Exception as e:
         print(f"  [ERROR] Error al procesar {episodio_tag}: {e}")
         registrar_faltante(slug, alias, episodio_tag)
-        return {"estado": "error", "link": None}
+        return {"estado": "error", "link": None, "episodio_tag": episodio_tag}
 
-def guardar_links_csv(path, links, slug, library_path):
+def guardar_links_csv(path, links, alias, library_path):
     existentes = set()
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -130,7 +130,7 @@ def guardar_links_csv(path, links, slug, library_path):
         if os.stat(path).st_size == 0 or not existentes:
             writer.writerow(["episodio", "link_mega", "ruta_destino"])
 
-        ruta_destino = os.path.join(library_path, slug)
+        ruta_destino = os.path.join(library_path, alias)
         for episodio, link in links:
             if episodio not in existentes:
                 writer.writerow([episodio, link, ruta_destino])

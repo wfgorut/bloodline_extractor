@@ -2,10 +2,11 @@ import os
 import time
 from mega_extractor_embed import extraer_link_mega
 from metadata_extractor import extraer_metadata
+from mf_extractor_embed import extraer_link_mediafire
 from utils import generar_alias
 from config import LIBRARY_PATH, SAFE_SLEEP
 from driver import cerrar_tabs_adicionales
-from progreso import registrar_exito, registrar_faltante, marcar_completado
+from progreso import registrar_exito, registrar_faltante, marcar_completado, obtener_ultimo_consultado
 
 def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     """
@@ -24,12 +25,12 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
         print(f"[WARNING] Metadata inválida o incompleta para {slug}. Se activa exploración extendida.")
 
     links_validos = 0
-    ep = 1
+    # 🆕 Arranca desde el último episodio consultado + 1
+    ep = obtener_ultimo_consultado(slug) + 1
 
-    print(f"  [CHECKING] Explorando episodios para {slug}...")
+    print(f"  [CHECKING] Explorando episodios para {slug} desde ep{ep}...")
 
     while True:
-        ep_tag = f"ep{ep:02}"
         resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
         cerrar_tabs_adicionales(driver)
 
@@ -38,13 +39,21 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
             break
 
         if resultado["estado"] == "ok":
-            print(f"  [SUCCESS] Episodio {ep:02} OK")
-            registrar_exito(slug, alias, ep_tag)
+            print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
+            registrar_exito(slug, alias, resultado['episodio_tag'])
             links_validos += 1
         else:
-            print(f"  [VOID] Episodio {ep:02} no disponible")
-            registrar_faltante(slug, alias, ep_tag)
-            # ⚠️ No abortar por error, solo avanzar al siguiente episodio
+            print(f"  [VOID] No hay link válido en MEGA. Intentando fallback MediaFire...")
+            url_episodio = f"https://jkanime.net/{slug}/{ep}/"
+            fallback = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
+            
+            if fallback["estado"] == "ok":
+                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
+                registrar_exito(slug, alias, resultado['episodio_tag'])
+                links_validos += 1
+            else:
+                print(f"  [FAIL] Sin links válidos para {resultado['episodio_tag']}")
+                registrar_faltante(slug, alias, resultado['episodio_tag'])
 
         ep += 1
         time.sleep(SAFE_SLEEP())
