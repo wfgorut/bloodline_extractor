@@ -10,7 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import undetected_chromedriver as uc
 from driver import cerrar_tabs_adicionales
-from progreso import registrar_faltante, registrar_exito
+from progreso import registrar_faltante, registrar_exito_mega
 
 BASE_URL = "https://jkanime.net"
 HEADERS = {
@@ -103,7 +103,7 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                                 [(episodio_tag, final_url)],
                                 alias, library_path
                             )
-                            registrar_exito(slug, alias, episodio_tag)
+                            registrar_exito_mega(slug, alias, episodio_tag)
                             return {"estado": "ok", "link": final_url, "episodio_tag": episodio_tag}
 
         print(f"  [WARNING] No se encontró link MEGA para {episodio_tag}")

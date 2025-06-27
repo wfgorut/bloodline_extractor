@@ -29,11 +29,11 @@ HEADERS = {
 }
 
 # === PAUSAS ENTRE ACCIONES ===
-FAST_SLEEP = 1.0
+FAST_SLEEP = 0.5
 
 def SAFE_SLEEP():
     import random
-    return random.uniform(2.5, 3.5)
+    return random.uniform(0.5, 2.5)
 
 
 
@@ -67,7 +67,7 @@ def obtener_slugs_directorio(estado, pagina, orden="desc", driver=None):  # â�
                 animes_json = json.loads(match.group(1))
                 slugs = [entry["slug"] for entry in animes_json["data"]]
                 last_page = animes_json.get("last_page", pagina)
-                print(f"[DEBUG] {len(slugs)} slugs encontrados en pÃ¡gina {pagina}")
+                print(f"[SCANNING] {len(slugs)} slugs encontrados en pÃ¡gina {pagina}")
                 return slugs, last_page
             except Exception as e:
                 print(f"[ERROR] Error al parsear JSON en pÃ¡gina {pagina}: {e}")
@@ -150,50 +150,57 @@ from metadata_extractor import extraer_metadata
 from config import LIBRARY_PATH, SAFE_SLEEP
 from utils import generar_alias
 from procesar_anime import procesar_anime
-from driver import crear_driver_configurado as crear_driver  # â† NUEVO
+from driver import crear_driver_configurado as crear_driver
 import time
 
 print("=== BLOODLINE EXTRACTOR ===")
 
 # --- DETECCIÃ“N DE HOSTNAME ---
 nombre_pc = socket.gethostname().upper()
-print(f"[ðŸ–¥ï¸] Ejecutando en mÃ¡quina: {nombre_pc}")
-print(f"[ðŸ“‚] Biblioteca localizada en: {LIBRARY_PATH}\n")
+print(f"[PC] Ejecutando en mÃ¡quina: {nombre_pc}")
+print(f"[PATH] Biblioteca localizada en: {LIBRARY_PATH}\n")
 
 # --- SELECCIÃ“N DE ESTADO ---
-print("1. Selecciona el tipo de animes a scrapear:")
-print("   [1] Finalizados")
-print("   [2] En emisiÃ³n")
-print("   [3] Estrenos (solo metadata)")
-op_estado = input("   OpciÃ³n (1/2/3): ").strip()
-
 estado_map = {
     "1": "finalizados",
     "2": "emision",
     "3": "estrenos"
 }
-estado = estado_map.get(op_estado, "finalizados")
+
+op_estado = ""
+while op_estado not in estado_map:
+    print("1. Selecciona el tipo de animes a scrapear:")
+    print("   [1] Finalizados")
+    print("   [2] En emisiÃ³n")
+    print("   [3] Estrenos (solo metadata)")
+    op_estado = input("   OpciÃ³n (1/2/3): ").strip()
+
+estado = estado_map[op_estado]
 
 # --- SELECCIÃ“N DE ORDEN ---
-print("\n2. Â¿En quÃ© orden deseas procesar?")
-print("   [1] Descendente (por defecto)")
-print("   [2] Ascendente (de los mÃ¡s viejos a los nuevos)")
-op_orden = input("   OpciÃ³n (1/2): ").strip()
+op_orden = ""
+while op_orden not in ("1", "2"):
+    print("\n2. Â¿En quÃ© orden deseas procesar?")
+    print("   [1] Descendente (por defecto)")
+    print("   [2] Ascendente (de los mÃ¡s viejos a los nuevos)")
+    op_orden = input("   OpciÃ³n (1/2): ").strip()
 
 orden = "asc" if op_orden == "2" else "desc"
 
 # --- VISIBILIDAD DEL NAVEGADOR ---
-print("\n3. Â¿Deseas que el navegador sea visible?")
-print("   [1] SÃ­ (Ãºtil para debug)")
-print("   [2] No (modo oculto fuera del monitor)")
-op_visible = input("   Visibilidad (1/2): ").strip()
+op_visible = ""
+while op_visible not in ("1", "2"):
+    print("\n3. Â¿Deseas que el navegador sea visible?")
+    print("   [1] SÃ­ (Ãºtil para debug)")
+    print("   [2] No (modo oculto fuera del monitor)")
+    op_visible = input("   Visibilidad (1/2): ").strip()
 
 modo_oculto = (op_visible == "2")
 
-print(f"\n[âš™ï¸] Estado: {estado} â€” Orden: {orden.upper()} â€” Navegador {'oculto' if modo_oculto else 'visible'}\n")
+print(f"\n[SET] Estado: {estado} â€” Orden: {orden.upper()} â€” Navegador {'oculto' if modo_oculto else 'visible'}\n")
 
 # === CREAR DRIVER UNA VEZ ===
-driver = crear_driver(visible=not modo_oculto) # â† NUEVO
+driver = crear_driver(visible=not modo_oculto)
 
 # --- INICIO DE SCRAPING ---
 pagina = 1
@@ -203,7 +210,7 @@ aliases_generados = set()
 try:
     while True:
         print(f"[JKANIME] PÃ¡gina {pagina}")
-        slugs, ultima_pagina = obtener_slugs_directorio(estado, pagina, orden, driver=driver)  # â† CAMBIO
+        slugs, ultima_pagina = obtener_slugs_directorio(estado, pagina, orden, driver=driver)
         if not slugs:
             print(f"[JKANIME] No se encontraron mÃ¡s animes en la pÃ¡gina {pagina}. Fin del scraping.")
             break
@@ -212,8 +219,7 @@ try:
             try:
                 alias = generar_alias(slug, existentes=aliases_generados)
                 aliases_generados.add(alias)
-                procesar_anime(slug, alias, driver=driver, modo_oculto=modo_oculto)  # â† CAMBIO
-
+                procesar_anime(slug, alias, driver=driver, modo_oculto=modo_oculto)
             except Exception as e:
                 print(f"[ERROR] Error en {slug}: {e}")
 
@@ -226,7 +232,7 @@ try:
         time.sleep(SAFE_SLEEP())
 
 finally:
-    driver.quit()  # â† CIERRE ÃšNICO Y SEGURO
+    driver.quit()
 
 print("\n[END] Proceso finalizado.")
 
@@ -243,7 +249,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import undetected_chromedriver as uc
 from driver import cerrar_tabs_adicionales
-from progreso import registrar_faltante, registrar_exito
+from progreso import registrar_faltante, registrar_exito_mega
 
 BASE_URL = "https://jkanime.net"
 HEADERS = {
@@ -334,9 +340,9 @@ def extraer_link_mega(slug, alias, episodio, driver, library_path):
                             guardar_links_csv(
                                 os.path.join(library_path, alias, f"mega_{alias}.csv"),
                                 [(episodio_tag, final_url)],
-                                slug, library_path
+                                alias, library_path
                             )
-                            registrar_exito(slug, alias, episodio_tag)
+                            registrar_exito_mega(slug, alias, episodio_tag)
                             return {"estado": "ok", "link": final_url, "episodio_tag": episodio_tag}
 
         print(f"  [WARNING] No se encontrÃ³ link MEGA para {episodio_tag}")
@@ -532,6 +538,8 @@ from selenium.webdriver.common.by import By
 from driver import cerrar_tabs_adicionales
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from progreso import registrar_exito_mf
+
 
 TIMEOUT = 10
 
@@ -621,7 +629,8 @@ def extraer_link_mediafire(slug, alias, episodio_tag, episodio_url, driver, fold
             if link_final:
                 # RUTA FINAL DEL CSV â†’ D:/catalog/BloodlineLibrary/anime/ALIAS/mediafire_ALIAS.csv
                 path_csv = os.path.join(folder_path, f"mediafire_{alias}.csv")
-                guardar_links_mediafire_csv(path_csv, [(episodio_tag, link_final)], slug, folder_path)
+                guardar_links_mediafire_csv(path_csv, [(episodio_tag, link_final)], alias, folder_path)
+                registrar_exito_mf(slug, alias, episodio_tag)
                 return {
                     "estado": "ok",
                     "servidor": "Mediafire",
@@ -645,7 +654,7 @@ from mf_extractor_embed import extraer_link_mediafire
 from utils import generar_alias
 from config import LIBRARY_PATH, SAFE_SLEEP
 from driver import cerrar_tabs_adicionales
-from progreso import registrar_exito, registrar_faltante, marcar_completado, obtener_ultimo_consultado
+from progreso import registrar_exito_mega, registrar_exito_mf, registrar_faltante, marcar_completado, obtener_ultimo_consultado
 
 def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     """
@@ -664,7 +673,7 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
         print(f"[WARNING] Metadata invÃ¡lida o incompleta para {slug}. Se activa exploraciÃ³n extendida.")
 
     links_validos = 0
-    # ðŸ†• Arranca desde el Ãºltimo episodio consultado + 1
+    #  Arranca desde el Ãºltimo episodio consultado + 1
     ep = obtener_ultimo_consultado(slug) + 1
 
     print(f"  [CHECKING] Explorando episodios para {slug} desde ep{ep}...")
@@ -679,7 +688,7 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
 
         if resultado["estado"] == "ok":
             print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
-            registrar_exito(slug, alias, resultado['episodio_tag'])
+            registrar_exito_mega(slug, alias, resultado['episodio_tag'])
             links_validos += 1
         else:
             print(f"  [VOID] No hay link vÃ¡lido en MEGA. Intentando fallback MediaFire...")
@@ -688,7 +697,7 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
             
             if fallback["estado"] == "ok":
                 print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
-                registrar_exito(slug, alias, resultado['episodio_tag'])
+                registrar_exito_mf(slug, alias, resultado['episodio_tag'])
                 links_validos += 1
             else:
                 print(f"  [FAIL] Sin links vÃ¡lidos para {resultado['episodio_tag']}")
@@ -699,14 +708,18 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
 
     if links_validos > 0:
         marcar_completado(slug)
+        from progreso import registrar_resumen_csv
+        registrar_resumen_csv(slug)
 
     print(f"  [SUCCESS] Finalizado {slug}: {links_validos} enlaces MEGA vÃ¡lidos.")
     return True
 
 ==== C:\dev\projects\bloodline_extractor\progreso.py ====
 import os
+import csv
 import json
 import datetime
+from config import BASE_PATH
 from config import LOG_MAESTRO_PATH
 
 def cargar_progress():
@@ -731,7 +744,8 @@ def registrar_faltante(slug, alias, ep_tag):
         data[slug] = {
             "alias": alias,
             "episodios_totales_declarados": 0,
-            "episodios_exitosos": [],
+            "episodios_exitosos_mega": [],
+            "episodios_exitosos_mf": [],
             "episodios_faltantes": [],
             "episodios_consultados": [],
             "modo_exploratorio": True,
@@ -740,8 +754,10 @@ def registrar_faltante(slug, alias, ep_tag):
 
     anime = data[slug]
 
-    if ep_tag not in anime["episodios_faltantes"]:
-        anime["episodios_faltantes"].append(ep_tag)
+    # Solo se registra como faltante si no fue exitoso en ninguna fuente
+    if ep_tag not in anime["episodios_exitosos_mega"] and ep_tag not in anime["episodios_exitosos_mf"]:
+        if ep_tag not in anime["episodios_faltantes"]:
+            anime["episodios_faltantes"].append(ep_tag)
 
     if ep_tag not in anime["episodios_consultados"]:
         anime["episodios_consultados"].append(ep_tag)
@@ -749,13 +765,20 @@ def registrar_faltante(slug, alias, ep_tag):
     anime["timestamp"] = timestamp()
     guardar_progress(data)
 
-def registrar_exito(slug, alias, ep_tag):
+def registrar_exito_mega(slug, alias, ep_tag):
+    _registrar_exito(slug, alias, ep_tag, fuente="mega")
+
+def registrar_exito_mf(slug, alias, ep_tag):
+    _registrar_exito(slug, alias, ep_tag, fuente="mf")
+
+def _registrar_exito(slug, alias, ep_tag, fuente):
     data = cargar_progress()
     if slug not in data:
         data[slug] = {
             "alias": alias,
             "episodios_totales_declarados": 0,
-            "episodios_exitosos": [],
+            "episodios_exitosos_mega": [],
+            "episodios_exitosos_mf": [],
             "episodios_faltantes": [],
             "episodios_consultados": [],
             "modo_exploratorio": True,
@@ -764,22 +787,24 @@ def registrar_exito(slug, alias, ep_tag):
 
     anime = data[slug]
 
-    # AÃ±ade a episodios exitosos si no estaba
-    if ep_tag not in anime["episodios_exitosos"]:
-        anime["episodios_exitosos"].append(ep_tag)
+    if fuente == "mega":
+        if ep_tag not in anime["episodios_exitosos_mega"]:
+            anime["episodios_exitosos_mega"].append(ep_tag)
+    elif fuente == "mf":
+        if ep_tag not in anime["episodios_exitosos_mf"]:
+            anime["episodios_exitosos_mf"].append(ep_tag)
 
-    # Quita de episodios_faltantes si estaba
-    if ep_tag in anime.get("episodios_faltantes", []):
+    if ep_tag in anime["episodios_faltantes"]:
         anime["episodios_faltantes"].remove(ep_tag)
 
-    # AÃ±ade a episodios_consultados si no estaba
     if ep_tag not in anime["episodios_consultados"]:
         anime["episodios_consultados"].append(ep_tag)
 
-    # Actualiza completado solo si no es modo exploratorio y ya tienes todos los episodios
+    # Actualiza completado si ya se tienen todos los episodios
     totales = anime.get("episodios_totales_declarados") or 0
     if not anime.get("modo_exploratorio", True) and totales > 0:
-        if len(anime["episodios_exitosos"]) >= totales:
+        total_exitosos = len(anime["episodios_exitosos_mega"]) + len(anime["episodios_exitosos_mf"])
+        if total_exitosos >= totales:
             anime["completado"] = True
 
     anime["timestamp"] = timestamp()
@@ -802,13 +827,48 @@ def obtener_ultimo_consultado(slug):
     anime = data.get(slug, {})
     episodios_consultados = anime.get("episodios_consultados", [])
     if not episodios_consultados:
-        return 0  # No hay episodios consultados, empieza desde 1
-    # Sacar el nÃºmero del Ãºltimo episodio consultado
-    ult_tag = episodios_consultados[-1]  # Ãºltimo episodio tipo "ep4"
+        return 0
+    ult_tag = episodios_consultados[-1]
     try:
-        return int(ult_tag.replace("ep", ""))  # extraer el nÃºmero
+        return int(ult_tag.replace("ep", ""))
     except:
         return 0
+
+def registrar_resumen_csv(slug):
+    data = cargar_progress()
+    info = data.get(slug)
+    if not info:
+        return
+
+    alias = info.get("alias", slug)
+    exitos_mega = len(info.get("episodios_exitosos_mega", []))
+    exitos_mf = len(info.get("episodios_exitosos_mf", []))
+    total_exitosos = exitos_mega + exitos_mf
+
+    totales = info.get("episodios_totales_declarados", 0)
+    if info.get("modo_exploratorio", True) or totales == 0:
+        totales = obtener_ultimo_consultado(slug)  # âœ… solo hasta el Ãºltimo episodio vÃ¡lido
+
+    completo = "SÃ­" if total_exitosos >= totales and totales > 0 else "No"
+
+    resumen_path = os.path.join(BASE_PATH, "resumen_progreso.csv")
+    existe = os.path.exists(resumen_path)
+
+    if existe:
+        with open(resumen_path, "r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("slug") == slug:
+                    print(f"[CSV] Ya existe entrada previa para {slug}, omitiendo.")
+                    return
+
+    with open(resumen_path, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        if not existe:
+            writer.writerow(["alias", "slug", "episodios", "exitos_mega", "exitos_mf", "completo"])
+        writer.writerow([alias, slug, totales, exitos_mega, exitos_mf, completo])
+
+    print(f"[CSV] Resumen actualizado: {slug}")
 
 ==== C:\dev\projects\bloodline_extractor\utils.py ====
 import csv
@@ -1385,6 +1445,82 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
     except Exception as e:
         print(f"[ERROR] Error extrayendo metadata de {slug}: {e}")
         return False
+
+==== C:\dev\projects\bloodline_extractor\bak\procesar_anime copy.py ====
+import os
+import time
+from mega_extractor_embed import extraer_link_mega
+from metadata_extractor import extraer_metadata
+from mf_extractor_embed import extraer_link_mediafire
+from mirror_extractor_embed import extraer_link_mirror
+from utils import generar_alias
+from config import LIBRARY_PATH, SAFE_SLEEP
+from driver import cerrar_tabs_adicionales
+from progreso import registrar_exito, registrar_faltante, marcar_completado, obtener_ultimo_consultado
+
+def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
+    """
+    Procesa un anime: extrae metadata, explora episodios, guarda links MEGA.
+    Solo se detiene si se detecta 404 en jkanime.net/{slug}/{n}.
+    """
+    if alias is None:
+        alias = generar_alias(slug)
+
+    folder_path = os.path.join(LIBRARY_PATH, alias)
+    os.makedirs(folder_path, exist_ok=True)
+
+    # --- METADATA ---
+    success = extraer_metadata(slug, alias, modo_oculto=modo_oculto, driver=driver)
+    if not success:
+        print(f"[WARNING] Metadata invÃ¡lida o incompleta para {slug}. Se activa exploraciÃ³n extendida.")
+
+    links_validos = 0
+    # ðŸ†• Arranca desde el Ãºltimo episodio consultado + 1
+    ep = obtener_ultimo_consultado(slug) + 1
+
+    print(f"  [CHECKING] Explorando episodios para {slug} desde ep{ep}...")
+
+    while True:
+        resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+        cerrar_tabs_adicionales(driver)
+
+        if resultado["estado"] == "404":
+            print(f"  [VOID] Slug agotado en {slug}/{ep}/ (404)")
+            break
+
+        if resultado["estado"] == "ok":
+            print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
+            registrar_exito(slug, alias, resultado['episodio_tag'])
+            links_validos += 1
+        else:
+            print(f"  [VOID] No hay link vÃ¡lido en MEGA. Intentando fallback MediaFire...")
+            url_episodio = f"https://jkanime.net/{slug}/{ep}/"
+            fallback_mf = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
+
+            if fallback_mf["estado"] == "ok":
+                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
+                registrar_exito(slug, alias, resultado['episodio_tag'])
+                links_validos += 1
+            else:
+                print(f"  [VOID] No hay link vÃ¡lido en MediaFire. Intentando mirrors secundarios...")
+                fallback_mirror = extraer_link_mirror(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
+
+                if fallback_mirror["estado"] == "ok":
+                    print(f"  [SUCCESS] {resultado['episodio_tag']} OK (Mirror: {fallback_mirror['servidor']})")
+                    registrar_exito(slug, alias, resultado['episodio_tag'])
+                    links_validos += 1
+                else:
+                    print(f"  [FAIL] Sin links vÃ¡lidos para {resultado['episodio_tag']}")
+                    registrar_faltante(slug, alias, resultado['episodio_tag'])
+
+        ep += 1
+        time.sleep(SAFE_SLEEP())
+
+    if links_validos > 0:
+        marcar_completado(slug)
+
+    print(f"  [SUCCESS] Finalizado {slug}: {links_validos} enlaces MEGA vÃ¡lidos.")
+    return True
 
 ==== C:\dev\projects\bloodline_extractor\bak\procesar_anime.py ====
 import os

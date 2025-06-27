@@ -28,10 +28,10 @@ HEADERS = {
 }
 
 # === PAUSAS ENTRE ACCIONES ===
-FAST_SLEEP = 1.0
+FAST_SLEEP = 0.5
 
 def SAFE_SLEEP():
     import random
-    return random.uniform(2.5, 3.5)
+    return random.uniform(0.5, 2.5)
 
 

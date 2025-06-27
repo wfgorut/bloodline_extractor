@@ -6,7 +6,7 @@ from mf_extractor_embed import extraer_link_mediafire
 from utils import generar_alias
 from config import LIBRARY_PATH, SAFE_SLEEP
 from driver import cerrar_tabs_adicionales
-from progreso import registrar_exito, registrar_faltante, marcar_completado, obtener_ultimo_consultado
+from progreso import registrar_exito_mega, registrar_exito_mf, registrar_faltante, marcar_completado, obtener_ultimo_consultado
 
 def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     """
@@ -25,7 +25,7 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
         print(f"[WARNING] Metadata inválida o incompleta para {slug}. Se activa exploración extendida.")
 
     links_validos = 0
-    # 🆕 Arranca desde el último episodio consultado + 1
+    #  Arranca desde el último episodio consultado + 1
     ep = obtener_ultimo_consultado(slug) + 1
 
     print(f"  [CHECKING] Explorando episodios para {slug} desde ep{ep}...")
@@ -40,7 +40,7 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
 
         if resultado["estado"] == "ok":
             print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
-            registrar_exito(slug, alias, resultado['episodio_tag'])
+            registrar_exito_mega(slug, alias, resultado['episodio_tag'])
             links_validos += 1
         else:
             print(f"  [VOID] No hay link válido en MEGA. Intentando fallback MediaFire...")
@@ -49,7 +49,7 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
             
             if fallback["estado"] == "ok":
                 print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
-                registrar_exito(slug, alias, resultado['episodio_tag'])
+                registrar_exito_mf(slug, alias, resultado['episodio_tag'])
                 links_validos += 1
             else:
                 print(f"  [FAIL] Sin links válidos para {resultado['episodio_tag']}")
@@ -60,6 +60,8 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
 
     if links_validos > 0:
         marcar_completado(slug)
+        from progreso import registrar_resumen_csv
+        registrar_resumen_csv(slug)
 
     print(f"  [SUCCESS] Finalizado {slug}: {links_validos} enlaces MEGA válidos.")
     return True

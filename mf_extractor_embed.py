@@ -7,6 +7,8 @@ from selenium.webdriver.common.by import By
 from driver import cerrar_tabs_adicionales
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from progreso import registrar_exito_mf
+
 
 TIMEOUT = 10
 
@@ -97,6 +99,7 @@ def extraer_link_mediafire(slug, alias, episodio_tag, episodio_url, driver, fold
                 # RUTA FINAL DEL CSV → D:/catalog/BloodlineLibrary/anime/ALIAS/mediafire_ALIAS.csv
                 path_csv = os.path.join(folder_path, f"mediafire_{alias}.csv")
                 guardar_links_mediafire_csv(path_csv, [(episodio_tag, link_final)], alias, folder_path)
+                registrar_exito_mf(slug, alias, episodio_tag)
                 return {
                     "estado": "ok",
                     "servidor": "Mediafire",
