@@ -128,9 +128,30 @@ def registrar_resumen_csv(slug):
     exitos_mf = len(info.get("episodios_exitosos_mf", []))
     total_exitosos = exitos_mega + exitos_mf
 
-    totales = info.get("episodios_totales_declarados", 0)
-    if info.get("modo_exploratorio", True) or totales == 0:
-        totales = obtener_ultimo_consultado(slug)  # ✅ solo hasta el último episodio válido
+    if info.get("modo_exploratorio", True):
+        # ✅ En modo exploratorio, excluir el último faltante si es el último consultado (probable 404)
+        todos = set(
+            info.get("episodios_exitosos_mega", []) +
+            info.get("episodios_exitosos_mf", []) +
+            info.get("episodios_faltantes", [])
+        )
+        consultados = set(info.get("episodios_consultados", []))
+
+        interseccion = todos.intersection(consultados)
+
+        # Detectar si el último consultado fue 404 (solo está en faltantes y consultados)
+        ultimo_tag = info["episodios_consultados"][-1] if info["episodios_consultados"] else None
+        if (
+            ultimo_tag
+            and ultimo_tag in info.get("episodios_faltantes", [])
+            and ultimo_tag not in info.get("episodios_exitosos_mega", [])
+            and ultimo_tag not in info.get("episodios_exitosos_mf", [])
+        ):
+            interseccion.discard(ultimo_tag)
+
+        totales = len(interseccion)
+    else:
+        totales = info.get("episodios_totales_declarados", 0)
 
     completo = "Sí" if total_exitosos >= totales and totales > 0 else "No"
 

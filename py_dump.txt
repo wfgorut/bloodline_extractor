@@ -375,16 +375,16 @@ def guardar_links_csv(path, links, alias, library_path):
                 writer.writerow([episodio, link, ruta_destino])
 
 ==== C:\dev\projects\bloodline_extractor\metadata_extractor.py ====
-import os
+import os 
 import re
 import csv
 import time
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup
+from progreso import registrar_resumen_csv, cargar_progress, guardar_progress
 from config import LIBRARY_PATH
 from utils import generar_alias
-from mega_extractor_embed import extraer_link_mega
 from driver import crear_driver_configurado, cerrar_tabs_adicionales
 
 HEADERS = {
@@ -496,32 +496,30 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
             if encontrados:
                 total_eps = int(encontrados[-1])
             else:
-                total_eps = 20
+                total_eps = 0
         except:
-            total_eps = 20
+            total_eps = 0
 
-        if total_eps > 0:
-            print(f"  [SUCCESS] Iniciando extracciÃ³n de enlaces MEGA para {total_eps} episodios...")
-            propio = False
-            if driver is None:
-                driver = crear_driver_configurado(visible=not modo_oculto)
-                propio = True
-
-            links_validos = 0
-            for ep in range(1, total_eps + 1):
-                resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
-                cerrar_tabs_adicionales(driver)
-                if resultado:
-                    links_validos += 1
-
-            if links_validos == 0:
-                print(f"  [WARNING] No se encontrÃ³ ningÃºn link MEGA vÃ¡lido para {slug}")
-
-            if propio:
-                driver.quit()
+        # === ACTUALIZAR PROGRESO CON MODO CORRECTO ===
+        data = cargar_progress()
+        if slug not in data:
+            data[slug] = {
+                "alias": alias,
+                "episodios_totales_declarados": total_eps if total_eps > 0 else 0,
+                "episodios_exitosos_mega": [],
+                "episodios_exitosos_mf": [],
+                "episodios_faltantes": [],
+                "episodios_consultados": [],
+                "modo_exploratorio": total_eps == 0,
+                "completado": False,
+            }
         else:
-            print(f"  [WARNING] Cantidad de episodios episodios desconocido. Entrando en modo exploratorio.")
+            data[slug]["episodios_totales_declarados"] = total_eps if total_eps > 0 else 0
+            data[slug]["modo_exploratorio"] = total_eps == 0
 
+        guardar_progress(data)
+
+        print(f"  [INFO] Metadata registrada correctamente. Episodios serÃ¡n procesados por el extractor principal.")
         return True
 
     except Exception as e:
@@ -654,7 +652,7 @@ from mf_extractor_embed import extraer_link_mediafire
 from utils import generar_alias
 from config import LIBRARY_PATH, SAFE_SLEEP
 from driver import cerrar_tabs_adicionales
-from progreso import registrar_exito_mega, registrar_exito_mf, registrar_faltante, marcar_completado, obtener_ultimo_consultado
+from progreso import registrar_exito_mega, registrar_exito_mf, registrar_faltante, marcar_completado, obtener_ultimo_consultado, cargar_progress, registrar_resumen_csv
 
 def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     """
@@ -670,48 +668,78 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     # --- METADATA ---
     success = extraer_metadata(slug, alias, modo_oculto=modo_oculto, driver=driver)
     if not success:
-        print(f"[WARNING] Metadata invÃ¡lida o incompleta para {slug}. Se activa exploraciÃ³n extendida.")
+        print(f"[WARNING] Metadata inv\u00e1lida o incompleta para {slug}. Se activa exploraci\u00f3n extendida.")
 
-    links_validos = 0
-    #  Arranca desde el Ãºltimo episodio consultado + 1
-    ep = obtener_ultimo_consultado(slug) + 1
+    data = cargar_progress()
+    info = data.get(slug, {})
+    total_eps = info.get("episodios_totales_declarados", 0)
+    modo_exploratorio = info.get("modo_exploratorio", True)
 
-    print(f"  [CHECKING] Explorando episodios para {slug} desde ep{ep}...")
+    if not total_eps or modo_exploratorio:
+        # === MODO EXPLORATORIO ===
+        ep = obtener_ultimo_consultado(slug) + 1
+        print(f"  [INFO] Modo exploratorio activado. Explorando hasta encontrar 404...")
+        while True:
+            resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+            cerrar_tabs_adicionales(driver)
 
-    while True:
-        resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
-        cerrar_tabs_adicionales(driver)
+            if resultado["estado"] == "404":
+                print(f"  [VOID] Slug agotado en {slug}/{ep}/ (404)")
+                break
 
-        if resultado["estado"] == "404":
-            print(f"  [VOID] Slug agotado en {slug}/{ep}/ (404)")
-            break
-
-        if resultado["estado"] == "ok":
-            print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
-            registrar_exito_mega(slug, alias, resultado['episodio_tag'])
-            links_validos += 1
-        else:
-            print(f"  [VOID] No hay link vÃ¡lido en MEGA. Intentando fallback MediaFire...")
-            url_episodio = f"https://jkanime.net/{slug}/{ep}/"
-            fallback = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
-            
-            if fallback["estado"] == "ok":
-                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
-                registrar_exito_mf(slug, alias, resultado['episodio_tag'])
-                links_validos += 1
+            if resultado["estado"] == "ok":
+                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
+                registrar_exito_mega(slug, alias, resultado['episodio_tag'])
             else:
-                print(f"  [FAIL] Sin links vÃ¡lidos para {resultado['episodio_tag']}")
-                registrar_faltante(slug, alias, resultado['episodio_tag'])
+                print(f"  [VOID] No hay link v\u00e1lido en MEGA. Intentando fallback MediaFire...")
+                url_episodio = f"https://jkanime.net/{slug}/{ep}/"
+                fallback = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
 
-        ep += 1
-        time.sleep(SAFE_SLEEP())
+                if fallback["estado"] == "ok":
+                    print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
+                    registrar_exito_mf(slug, alias, resultado['episodio_tag'])
+                else:
+                    print(f"  [FAIL] Sin links v\u00e1lidos para {resultado['episodio_tag']}")
+                    registrar_faltante(slug, alias, resultado['episodio_tag'])
 
-    if links_validos > 0:
+            ep += 1
+            time.sleep(SAFE_SLEEP())
+    else:
+        # === MODO DECLARADO ===
+        print(f"  [INFO] Metadata v\u00e1lida: recorriendo 1 \u2192 {total_eps}")
+        for ep in range(1, total_eps + 1):
+            resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+            cerrar_tabs_adicionales(driver)
+
+            if resultado["estado"] == "ok":
+                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
+                registrar_exito_mega(slug, alias, resultado['episodio_tag'])
+            else:
+                print(f"  [VOID] No hay link v\u00e1lido en MEGA. Intentando fallback MediaFire...")
+                url_episodio = f"https://jkanime.net/{slug}/{ep}/"
+                fallback = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
+
+                if fallback["estado"] == "ok":
+                    print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
+                    registrar_exito_mf(slug, alias, resultado['episodio_tag'])
+                else:
+                    print(f"  [FAIL] Sin links v\u00e1lidos para {resultado['episodio_tag']}")
+                    registrar_faltante(slug, alias, resultado['episodio_tag'])
+
+            time.sleep(SAFE_SLEEP())
+
+    # Actualiza resumen CSV si hubo al menos un link correcto
+    data = cargar_progress()
+    info = data.get(slug, {})
+    ok_mega = len(info.get("episodios_exitosos_mega", []))
+    ok_mf = len(info.get("episodios_exitosos_mf", []))
+    total_ok = ok_mega + ok_mf
+
+    if total_ok > 0:
         marcar_completado(slug)
-        from progreso import registrar_resumen_csv
         registrar_resumen_csv(slug)
 
-    print(f"  [SUCCESS] Finalizado {slug}: {links_validos} enlaces MEGA vÃ¡lidos.")
+    print(f"  [SUCCESS] Finalizado {slug}: {ok_mega} MEGA, {ok_mf} MF (total: {total_ok})")
     return True
 
 ==== C:\dev\projects\bloodline_extractor\progreso.py ====
@@ -845,9 +873,18 @@ def registrar_resumen_csv(slug):
     exitos_mf = len(info.get("episodios_exitosos_mf", []))
     total_exitosos = exitos_mega + exitos_mf
 
-    totales = info.get("episodios_totales_declarados", 0)
-    if info.get("modo_exploratorio", True) or totales == 0:
-        totales = obtener_ultimo_consultado(slug)  # âœ… solo hasta el Ãºltimo episodio vÃ¡lido
+    if info.get("modo_exploratorio", True):
+        # âœ… En modo exploratorio, total real es la suma de episodios vÃ¡lidamente visitados (sin 404)
+        todos = set(
+            info.get("episodios_exitosos_mega", []) +
+            info.get("episodios_exitosos_mf", []) +
+            info.get("episodios_faltantes", [])
+        )
+        consultados = set(info.get("episodios_consultados", []))
+        # Se excluyen los episodios que fueron consultados pero resultaron en 404
+        totales = len(todos.intersection(consultados))
+    else:
+        totales = info.get("episodios_totales_declarados", 0)
 
     completo = "SÃ­" if total_exitosos >= totales and totales > 0 else "No"
 
