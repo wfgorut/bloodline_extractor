@@ -27,7 +27,7 @@ def obtener_slugs_directorio(estado, pagina, orden="desc", driver=None):  # ← 
                 animes_json = json.loads(match.group(1))
                 slugs = [entry["slug"] for entry in animes_json["data"]]
                 last_page = animes_json.get("last_page", pagina)
-                print(f"[DEBUG] {len(slugs)} slugs encontrados en página {pagina}")
+                print(f"[SCANNING] {len(slugs)} slugs encontrados en página {pagina}")
                 return slugs, last_page
             except Exception as e:
                 print(f"[ERROR] Error al parsear JSON en página {pagina}: {e}")
