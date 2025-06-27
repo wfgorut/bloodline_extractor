@@ -1,13 +1,13 @@
-import os
+import os 
 import re
 import csv
 import time
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup
+from progreso import registrar_resumen_csv, cargar_progress, guardar_progress
 from config import LIBRARY_PATH
 from utils import generar_alias
-from mega_extractor_embed import extraer_link_mega
 from driver import crear_driver_configurado, cerrar_tabs_adicionales
 
 HEADERS = {
@@ -119,32 +119,30 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
             if encontrados:
                 total_eps = int(encontrados[-1])
             else:
-                total_eps = 20
+                total_eps = 0
         except:
-            total_eps = 20
+            total_eps = 0
 
-        if total_eps > 0:
-            print(f"  [SUCCESS] Iniciando extracción de enlaces MEGA para {total_eps} episodios...")
-            propio = False
-            if driver is None:
-                driver = crear_driver_configurado(visible=not modo_oculto)
-                propio = True
-
-            links_validos = 0
-            for ep in range(1, total_eps + 1):
-                resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
-                cerrar_tabs_adicionales(driver)
-                if resultado:
-                    links_validos += 1
-
-            if links_validos == 0:
-                print(f"  [WARNING] No se encontró ningún link MEGA válido para {slug}")
-
-            if propio:
-                driver.quit()
+        # === ACTUALIZAR PROGRESO CON MODO CORRECTO ===
+        data = cargar_progress()
+        if slug not in data:
+            data[slug] = {
+                "alias": alias,
+                "episodios_totales_declarados": total_eps if total_eps > 0 else 0,
+                "episodios_exitosos_mega": [],
+                "episodios_exitosos_mf": [],
+                "episodios_faltantes": [],
+                "episodios_consultados": [],
+                "modo_exploratorio": total_eps == 0,
+                "completado": False,
+            }
         else:
-            print(f"  [WARNING] Cantidad de episodios episodios desconocido. Entrando en modo exploratorio.")
+            data[slug]["episodios_totales_declarados"] = total_eps if total_eps > 0 else 0
+            data[slug]["modo_exploratorio"] = total_eps == 0
 
+        guardar_progress(data)
+
+        print(f"  [INFO] Metadata registrada correctamente. Episodios serán procesados por el extractor principal.")
         return True
 
     except Exception as e:
