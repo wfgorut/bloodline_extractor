@@ -206,6 +206,9 @@ driver = crear_driver(visible=not modo_oculto)
 pagina = 1
 ultima_pagina = None
 aliases_generados = set()
+from progreso import obtener_ultimo_slug_incompleto
+slug_reanudar = obtener_ultimo_slug_incompleto()
+reanudar_encontrado = False if slug_reanudar else True
 
 try:
     while True:
@@ -216,6 +219,14 @@ try:
             break
 
         for slug in slugs:
+            if not reanudar_encontrado:
+                if slug != slug_reanudar:
+                    print(f"[SKIP] Saltando {slug} hasta reanudar en {slug_reanudar}")
+                    continue
+                else:
+                    print(f"[RESUME] Reanudando desde {slug_reanudar}...")
+                    reanudar_encontrado = True
+
             try:
                 alias = generar_alias(slug, existentes=aliases_generados)
                 aliases_generados.add(alias)
@@ -862,6 +873,17 @@ def obtener_ultimo_consultado(slug):
     except:
         return 0
 
+def obtener_ultimo_slug_incompleto():
+    data = cargar_progress()
+    pendientes = [
+        (slug, info) for slug, info in data.items()
+        if not info.get("completado", False)
+    ]
+    if not pendientes:
+        return None
+    pendientes.sort(key=lambda x: x[1].get("timestamp", ""), reverse=True)
+    return pendientes[0][0]
+
 def registrar_resumen_csv(slug):
     data = cargar_progress()
     info = data.get(slug)
@@ -874,15 +896,27 @@ def registrar_resumen_csv(slug):
     total_exitosos = exitos_mega + exitos_mf
 
     if info.get("modo_exploratorio", True):
-        # âœ… En modo exploratorio, total real es la suma de episodios vÃ¡lidamente visitados (sin 404)
+        # âœ… En modo exploratorio, excluir el Ãºltimo faltante si es el Ãºltimo consultado (probable 404)
         todos = set(
             info.get("episodios_exitosos_mega", []) +
             info.get("episodios_exitosos_mf", []) +
             info.get("episodios_faltantes", [])
         )
         consultados = set(info.get("episodios_consultados", []))
-        # Se excluyen los episodios que fueron consultados pero resultaron en 404
-        totales = len(todos.intersection(consultados))
+
+        interseccion = todos.intersection(consultados)
+
+        # Detectar si el Ãºltimo consultado fue 404 (solo estÃ¡ en faltantes y consultados)
+        ultimo_tag = info["episodios_consultados"][-1] if info["episodios_consultados"] else None
+        if (
+            ultimo_tag
+            and ultimo_tag in info.get("episodios_faltantes", [])
+            and ultimo_tag not in info.get("episodios_exitosos_mega", [])
+            and ultimo_tag not in info.get("episodios_exitosos_mf", [])
+        ):
+            interseccion.discard(ultimo_tag)
+
+        totales = len(interseccion)
     else:
         totales = info.get("episodios_totales_declarados", 0)
 

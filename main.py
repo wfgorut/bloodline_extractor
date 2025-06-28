@@ -60,6 +60,9 @@ driver = crear_driver(visible=not modo_oculto)
 pagina = 1
 ultima_pagina = None
 aliases_generados = set()
+from progreso import obtener_ultimo_slug_incompleto
+slug_reanudar = obtener_ultimo_slug_incompleto()
+reanudar_encontrado = False if slug_reanudar else True
 
 try:
     while True:
@@ -70,6 +73,14 @@ try:
             break
 
         for slug in slugs:
+            if not reanudar_encontrado:
+                if slug != slug_reanudar:
+                    print(f"[SKIP] Saltando {slug} hasta reanudar en {slug_reanudar}")
+                    continue
+                else:
+                    print(f"[RESUME] Reanudando desde {slug_reanudar}...")
+                    reanudar_encontrado = True
+
             try:
                 alias = generar_alias(slug, existentes=aliases_generados)
                 aliases_generados.add(alias)

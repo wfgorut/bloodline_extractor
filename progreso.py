@@ -117,6 +117,17 @@ def obtener_ultimo_consultado(slug):
     except:
         return 0
 
+def obtener_ultimo_slug_incompleto():
+    data = cargar_progress()
+    pendientes = [
+        (slug, info) for slug, info in data.items()
+        if not info.get("completado", False)
+    ]
+    if not pendientes:
+        return None
+    pendientes.sort(key=lambda x: x[1].get("timestamp", ""), reverse=True)
+    return pendientes[0][0]
+
 def registrar_resumen_csv(slug):
     data = cargar_progress()
     info = data.get(slug)
