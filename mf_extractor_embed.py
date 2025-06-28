@@ -56,7 +56,7 @@ def resolver_link_mediafire(driver, proxy_url):
         return None
 
 def extraer_link_mediafire(slug, alias, episodio_tag, episodio_url, driver, folder_path):
-    print(f"  [FALLBACK] Verificando MediaFire para {episodio_url}")
+    print(f"  [MEDIAFIRE-PRIMARY] Verificando MediaFire para {episodio_url}")
     try:
         driver.get(episodio_url)
         cerrar_tabs_adicionales(driver)

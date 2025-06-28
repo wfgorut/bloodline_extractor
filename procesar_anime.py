@@ -10,7 +10,7 @@ from progreso import registrar_exito_mega, registrar_exito_mf, registrar_faltant
 
 def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     """
-    Procesa un anime: extrae metadata, explora episodios, guarda links MEGA.
+    Procesa un anime: extrae metadata, explora episodios, guarda links MediaFire con fallback en MEGA.
     Solo se detiene si se detecta 404 en jkanime.net/{slug}/{n}.
     """
     if alias is None:
@@ -22,7 +22,7 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
     # --- METADATA ---
     success = extraer_metadata(slug, alias, modo_oculto=modo_oculto, driver=driver)
     if not success:
-        print(f"[WARNING] Metadata inv\u00e1lida o incompleta para {slug}. Se activa exploraci\u00f3n extendida.")
+        print(f"[WARNING] Metadata inválida o incompleta para {slug}. Se activa exploración extendida.")
 
     data = cargar_progress()
     info = data.get(slug, {})
@@ -34,7 +34,15 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
         ep = obtener_ultimo_consultado(slug) + 1
         print(f"  [INFO] Modo exploratorio activado. Explorando hasta encontrar 404...")
         while True:
-            resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+            url_episodio = f"https://jkanime.net/{slug}/{ep}/"
+
+            driver.get(url_episodio)
+            time.sleep(2)
+            if "404" in driver.title or "Página no encontrada" in driver.page_source or "Oops" in driver.page_source:
+                print(f"  [VOID] Slug agotado en {slug}/{ep}/ (404)")
+                break
+
+            resultado = extraer_link_mediafire(slug, alias, f"ep{ep}", url_episodio, driver, folder_path)
             cerrar_tabs_adicionales(driver)
 
             if resultado["estado"] == "404":
@@ -42,43 +50,40 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
                 break
 
             if resultado["estado"] == "ok":
-                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
-                registrar_exito_mega(slug, alias, resultado['episodio_tag'])
+                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
+                registrar_exito_mf(slug, alias, resultado['episodio_tag'])
             else:
-                print(f"  [VOID] No hay link v\u00e1lido en MEGA. Intentando fallback MediaFire...")
-                url_episodio = f"https://jkanime.net/{slug}/{ep}/"
-                fallback = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
-
+                print(f"  [VOID] No hay link válido en MediaFire. Intentando fallback MEGA...")
+                fallback = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
                 if fallback["estado"] == "ok":
-                    print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
-                    registrar_exito_mf(slug, alias, resultado['episodio_tag'])
+                    print(f"  [SUCCESS] {fallback['episodio_tag']} OK (MEGA)")
+                    registrar_exito_mega(slug, alias, fallback['episodio_tag'])
                 else:
-                    print(f"  [FAIL] Sin links v\u00e1lidos para {resultado['episodio_tag']}")
-                    registrar_faltante(slug, alias, resultado['episodio_tag'])
+                    print(f"  [FAIL] Sin links válidos para ep{ep}")
+                    registrar_faltante(slug, alias, f"ep{ep}")
 
             ep += 1
             time.sleep(SAFE_SLEEP())
     else:
         # === MODO DECLARADO ===
-        print(f"  [INFO] Metadata v\u00e1lida: recorriendo 1 \u2192 {total_eps}")
+        print(f"  [INFO] Metadata válida: recorriendo 1 → {total_eps}")
         for ep in range(1, total_eps + 1):
-            resultado = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
+            url_episodio = f"https://jkanime.net/{slug}/{ep}/"
+            resultado = extraer_link_mediafire(slug, alias, f"ep{ep}", url_episodio, driver, folder_path)
             cerrar_tabs_adicionales(driver)
 
             if resultado["estado"] == "ok":
-                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MEGA)")
-                registrar_exito_mega(slug, alias, resultado['episodio_tag'])
+                print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
+                registrar_exito_mf(slug, alias, resultado['episodio_tag'])
             else:
-                print(f"  [VOID] No hay link v\u00e1lido en MEGA. Intentando fallback MediaFire...")
-                url_episodio = f"https://jkanime.net/{slug}/{ep}/"
-                fallback = extraer_link_mediafire(slug, alias, resultado['episodio_tag'], url_episodio, driver, folder_path)
-
+                print(f"  [VOID] No hay link válido en MediaFire. Intentando fallback MEGA...")
+                fallback = extraer_link_mega(slug, alias, ep, driver, LIBRARY_PATH)
                 if fallback["estado"] == "ok":
-                    print(f"  [SUCCESS] {resultado['episodio_tag']} OK (MediaFire)")
-                    registrar_exito_mf(slug, alias, resultado['episodio_tag'])
+                    print(f"  [SUCCESS] {fallback['episodio_tag']} OK (MEGA)")
+                    registrar_exito_mega(slug, alias, fallback['episodio_tag'])
                 else:
-                    print(f"  [FAIL] Sin links v\u00e1lidos para {resultado['episodio_tag']}")
-                    registrar_faltante(slug, alias, resultado['episodio_tag'])
+                    print(f"  [FAIL] Sin links válidos para ep{ep}")
+                    registrar_faltante(slug, alias, f"ep{ep}")
 
             time.sleep(SAFE_SLEEP())
 
@@ -95,3 +100,4 @@ def procesar_anime(slug, alias=None, driver=None, modo_oculto=True):
 
     print(f"  [SUCCESS] Finalizado {slug}: {ok_mega} MEGA, {ok_mf} MF (total: {total_ok})")
     return True
+

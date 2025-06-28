@@ -70,7 +70,7 @@ def esperar_botones_descarga(driver, timeout=3):
 def extraer_link_mega(slug, alias, episodio, driver, library_path):
     episodio_tag = formatear_episodio(episodio)  # <- Solo aquí formateamos ep
     episodio_url = f"{BASE_URL}/{slug}/{episodio}/"
-    print(f"[CHECKING] Revisando episodio: {episodio_url}")
+    print(f"[MEGA-FALLBACK] Verificando MEGA para: {episodio_url}")
 
     try:
         driver.get(episodio_url)
