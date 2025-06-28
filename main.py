@@ -5,6 +5,7 @@ from config import LIBRARY_PATH, SAFE_SLEEP
 from utils import generar_alias
 from procesar_anime import procesar_anime
 from driver import crear_driver_configurado as crear_driver
+from progreso import obtener_ultimo_slug_incompleto
 import time
 
 print("=== BLOODLINE EXTRACTOR ===")
@@ -69,13 +70,25 @@ try:
             print(f"[JKANIME] No se encontraron más animes en la página {pagina}. Fin del scraping.")
             break
 
+        reanudar_desde = obtener_ultimo_slug_incompleto()
+        reanudar_encontrado = False if reanudar_desde else True
+
         for slug in slugs:
+            if not reanudar_encontrado:
+                if slug == reanudar_desde:
+                    print(f"[RESUME] Reanudando desde {slug}...")
+                    reanudar_encontrado = True
+                else:
+                    print(f"[SKIP] Saltando {slug} (ya completado o no es el último incompleto)...")
+                    continue
+
             try:
                 alias = generar_alias(slug, existentes=aliases_generados)
                 aliases_generados.add(alias)
                 procesar_anime(slug, alias, driver=driver, modo_oculto=modo_oculto)
             except Exception as e:
                 print(f"[ERROR] Error en {slug}: {e}")
+
 
         if pagina >= ultima_pagina:
             print(f"[SUCCESS] El extractor llegó a la última página: {ultima_pagina}")

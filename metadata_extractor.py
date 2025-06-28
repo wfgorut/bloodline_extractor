@@ -123,22 +123,21 @@ def extraer_metadata(slug, alias=None, existentes_aliases=None, modo_oculto=True
         except:
             total_eps = 0
 
-        # === ACTUALIZAR PROGRESO CON MODO CORRECTO ===
+        # === ACTUALIZAR PROGRESO SIN PERDER INFO PREVIA ===
         data = cargar_progress()
-        if slug not in data:
-            data[slug] = {
-                "alias": alias,
-                "episodios_totales_declarados": total_eps if total_eps > 0 else 0,
-                "episodios_exitosos_mega": [],
-                "episodios_exitosos_mf": [],
-                "episodios_faltantes": [],
-                "episodios_consultados": [],
-                "modo_exploratorio": total_eps == 0,
-                "completado": False,
-            }
-        else:
-            data[slug]["episodios_totales_declarados"] = total_eps if total_eps > 0 else 0
-            data[slug]["modo_exploratorio"] = total_eps == 0
+        prev = data.get(slug, {})
+
+        data[slug] = {
+            "alias": alias,
+            "episodios_totales_declarados": total_eps if total_eps > 0 else prev.get("episodios_totales_declarados", 0),
+            "episodios_exitosos_mega": prev.get("episodios_exitosos_mega", []),
+            "episodios_exitosos_mf": prev.get("episodios_exitosos_mf", []),
+            "episodios_faltantes": prev.get("episodios_faltantes", []),
+            "episodios_consultados": prev.get("episodios_consultados", []),
+            "modo_exploratorio": total_eps == 0 if "modo_exploratorio" not in prev else prev["modo_exploratorio"],
+            "completado": prev.get("completado", False),
+            "timestamp": prev.get("timestamp")
+        }
 
         guardar_progress(data)
 

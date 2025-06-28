@@ -173,3 +173,14 @@ def registrar_resumen_csv(slug):
         writer.writerow([alias, slug, totales, exitos_mega, exitos_mf, completo])
 
     print(f"[CSV] Resumen actualizado: {slug}")
+
+def obtener_ultimo_slug_incompleto():
+    data = cargar_progress()
+    pendientes = [
+        (slug, info) for slug, info in data.items()
+        if not info.get("completado", False)
+    ]
+    if not pendientes:
+        return None
+    pendientes.sort(key=lambda x: x[1].get("timestamp", ""), reverse=True)
+    return pendientes[0][0]  # slug
