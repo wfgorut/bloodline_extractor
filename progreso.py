@@ -1,5 +1,7 @@
 import os
 import csv
+import tempfile
+import shutil
 import json
 import datetime
 from config import BASE_PATH
@@ -15,8 +17,22 @@ def cargar_progress():
     return {}
 
 def guardar_progress(data):
-    with open(LOG_MAESTRO_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    try:
+        # Carpeta donde vive el LOG
+        dir_path = os.path.dirname(LOG_MAESTRO_PATH)
+
+        # Creamos archivo temporal en la misma carpeta
+        with tempfile.NamedTemporaryFile("w", delete=False, dir=dir_path, encoding="utf-8") as tmp:
+            json.dump(data, tmp, indent=2, ensure_ascii=False)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            temp_path = tmp.name
+
+        # Reemplazamos el archivo original por el temporal solo si todo salió bien
+        shutil.move(temp_path, LOG_MAESTRO_PATH)
+        print(f"[SAVE] Progreso guardado correctamente. Total slugs: {len(data)}")
+    except Exception as e:
+        print(f"[ERROR] No se pudo guardar el progreso: {e}")
 
 def timestamp():
     return datetime.datetime.now().isoformat(timespec='seconds')
@@ -182,5 +198,5 @@ def obtener_ultimo_slug_incompleto():
     ]
     if not pendientes:
         return None
-    pendientes.sort(key=lambda x: x[1].get("timestamp", ""), reverse=True)
+    pendientes.sort(key=lambda x: x[1].get("timestamp") or "", reverse=True)
     return pendientes[0][0]  # slug

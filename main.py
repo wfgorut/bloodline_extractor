@@ -5,6 +5,7 @@ from config import LIBRARY_PATH, SAFE_SLEEP
 from utils import generar_alias
 from procesar_anime import procesar_anime
 from driver import crear_driver_configurado as crear_driver
+from progreso import guardar_progress, cargar_progress
 from progreso import obtener_ultimo_slug_incompleto
 import time
 
@@ -79,7 +80,7 @@ try:
                     print(f"[RESUME] Reanudando desde {slug}...")
                     reanudar_encontrado = True
                 else:
-                    print(f"[SKIP] Saltando {slug} (ya completado o no es el último incompleto)...")
+                    print(f"[SKIP] Saltando {slug} >>>>¡COMPLETO!<<<<")
                     continue
 
             try:
@@ -87,8 +88,10 @@ try:
                 aliases_generados.add(alias)
                 procesar_anime(slug, alias, driver=driver, modo_oculto=modo_oculto)
             except Exception as e:
-                print(f"[ERROR] Error en {slug}: {e}")
-
+                print(f"[ERROR] Falló al procesar {slug}: {e}")
+                print("[BACKUP] Salvando progreso actual antes de abortar...")
+                guardar_progress(cargar_progress())
+                raise
 
         if pagina >= ultima_pagina:
             print(f"[SUCCESS] El extractor llegó a la última página: {ultima_pagina}")
